@@ -6,11 +6,11 @@ from __future__ import print_function, division
 # Python stdlib
 import Tkinter as tk
 import Pmw
-import tkFont
 # Chimera stuff
 import chimera
+import chimera.tkgui
 from chimera.baseDialog import ModelessDialog
-from chimera.widgets import MoleculeScrolledListBox, SortableTable
+from chimera.widgets import MoleculeScrolledListBox
 # Additional 3rd parties
 
 # Own
@@ -52,8 +52,36 @@ STYLES = {
         'borderwidth': 1,
         'highlightthickness': 0,
     },
+    tk.Checkbutton: {
+        'highlightbackground': chimera.tkgui.app.cget('bg'),
+        'activebackground': chimera.tkgui.app.cget('bg'),
+    },
     Pmw.OptionMenu: {
-        'menubutton_borderwidth': 1
+        'menubutton_borderwidth': 1,
+        'menu_relief': 'flat',
+        'menu_activeborderwidth': 0,
+        'menu_activebackground': '#EEE',
+        'menu_borderwidth': 1,
+        'menu_background': 'white',
+        'hull_borderwidth': 0,
+    },
+    Pmw.ComboBox: {
+        'entry_borderwidth': 1,
+        'entry_highlightthickness': 0,
+        'entry_background': 'white',
+        'arrowbutton_borderwidth': 1,
+        'arrowbutton_relief': 'flat',
+        'arrowbutton_highlightthickness': 0,
+        'listbox_borderwidth': 1,
+        'listbox_background': 'white',
+        'listbox_relief': 'ridge',
+        'listbox_highlightthickness': 0,
+        'scrolledlist_hull_borderwidth': 0
+    },
+    MoleculeScrolledListBox: {
+        'listbox_borderwidth': 1,
+        'listbox_background': 'white',
+        'listbox_highlightthickness': 0,
     }
 }
 
@@ -67,10 +95,6 @@ class CauchianDialog(ModelessDialog):
     If you don't want this behaviour and instead you want your extension to 
     claim exclusive usage, use ModalDialog.
     """
-
-    buttons = ('Save', 'Close')
-    default = None
-    help = 'https://www.insilichem.com'
 
     QM_METHODS = ['DFT', 'HF', 'MP2']
     QM_FUNCTIONALS = {
@@ -94,6 +118,10 @@ class CauchianDialog(ModelessDialog):
         'Water': ['TIP3P']
     }
     MEM_UNITS = ['TB', 'GB', 'MB']
+
+    buttons = ('Save', 'Preview', 'Close')
+    default = None
+    help = 'https://www.insilichem.com'
 
     def __init__(self, *args, **kwarg):
         # GUI init
@@ -129,6 +157,8 @@ class CauchianDialog(ModelessDialog):
 
         # Flexibility & restraints
         self.var_flex_policy = tk.StringVar()
+        self.var_flex_lbl = tk.StringVar()
+        self.var_flex_lbl.set('No selected atoms')
         self.var_redundant = tk.IntVar()
 
         # Hardware & Output variables
@@ -149,7 +179,8 @@ class CauchianDialog(ModelessDialog):
     def _basis_sets_custom_build(self, *args):
         basis = self.var_qm_basis.get()
         ext = self.var_qm_basis_ext.get()
-        self.var_qm_basis_custom.set('{}{}'.format(basis, ext if ext else ''))
+        if basis:
+            self.var_qm_basis_custom.set('{}{}'.format(basis, ext if ext else ''))
 
     def _initialPositionCheck(self, *args):
         try:
@@ -162,8 +193,8 @@ class CauchianDialog(ModelessDialog):
         for widget in widgets:
             try:
                 widget.configure(**STYLES[widget.__class__])
-            except:
-                pass
+            except Exception as e:
+                print('Error fixing styles:', type(e), str(e))
 
     def fillInUI(self, parent):
         """
@@ -178,6 +209,7 @@ class CauchianDialog(ModelessDialog):
         self.ui_molecule_frame = tk.LabelFrame(self.canvas, text='Select molecules')
         self.ui_molecules = MoleculeScrolledListBox(self.ui_molecule_frame)
         self.ui_molecules.pack(expand=True, fill='both', padx=5, pady=5)
+        self._fix_styles(self.ui_molecules)
 
         # Modelization
         self.ui_model_frame = tk.LabelFrame(self.canvas, text='Modelization')
@@ -219,7 +251,8 @@ class CauchianDialog(ModelessDialog):
                                               items=self.QM_BASIS_SETS_EXT)
         self.ui_qm_basis_per_atom = tk.Button(self.canvas, text='Per-element')
         self.ui_qm_basis_custom = tk.Entry(self.canvas, textvariable=self.var_qm_basis_custom)
-        self.ui_qm_keywords = tk.Entry(self.canvas, textvariable=self.var_qm_keywords)
+        self.ui_qm_keywords = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_qm_keywords,
+                                           history=True, unique=True, dropdown=True)
 
         qm_grid = [['Method', (self.ui_qm_methods, 'Functional', self.ui_qm_functional_type, self.ui_qm_functionals)],
                    ['Basis set', (self.ui_qm_basis, self.ui_qm_basis_ext, self.ui_qm_basis_custom, self.ui_qm_basis_per_atom)],
@@ -246,14 +279,16 @@ class CauchianDialog(ModelessDialog):
         self.ui_flex_policy = Pmw.OptionMenu(self.canvas,
                                              menubutton_textvariable=self.var_flex_policy,
                                              items=['flexible', 'fixed'])
+        self.ui_flex_lbl = tk.Label(self.canvas, textvariable=self.var_flex_lbl)
         self.ui_flex_btn = tk.Button(self.canvas, text='Configure')
-        self.ui_redundant = tk.Checkbutton(self.canvas, text='Enable redundant coordinates',
+        self.ui_redundant = tk.Checkbutton(self.canvas, text='Also, apply some restraints',
                                            variable=self.var_redundant)
-        self.ui_redundant_btn = tk.Button(self.canvas, text='Configure')
+        self.ui_redundant_btn = tk.Button(self.canvas, text='Edit redundant coordinates')
 
-        flex_grid = [[('All atoms are', self.ui_flex_policy, 'except'), self.ui_flex_btn],
-                     [self.ui_redundant, self.ui_redundant_btn]]
-        self.auto_grid(self.ui_flex_frame, flex_grid, resize_columns=(0,), label_sep='...')
+        flex_grid = [['All atoms are', self.ui_flex_policy],
+                     ['Except', (self.ui_flex_lbl, self.ui_flex_btn)],
+                     ['Configure restraints', self.ui_redundant_btn]]
+        self.auto_grid(self.ui_flex_frame, flex_grid ,label_sep='...')
 
         # Charges & multiplicity
         self.ui_charges_frame = tk.LabelFrame(self.canvas, text='Charges & Multiplicity')
@@ -301,6 +336,12 @@ class CauchianDialog(ModelessDialog):
         self.ui_preview_frame.grid(row=len(frames)+1, columnspan=2, sticky='ew', padx=5, pady=5)
 
     def Save(self):
+        """
+        Default! Triggered action if you click on an Apply button
+        """
+        pass
+
+    def Preview(self):
         """
         Default! Triggered action if you click on an Apply button
         """
