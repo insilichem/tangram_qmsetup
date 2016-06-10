@@ -119,13 +119,16 @@ class CauchianDialog(ModelessDialog):
     }
     MEM_UNITS = ['TB', 'GB', 'MB']
 
-    buttons = ('Save', 'Preview', 'Close')
+    buttons = ('Preview', 'Export', 'Import', 'Close')
     default = None
     help = 'https://www.insilichem.com'
 
     def __init__(self, *args, **kwarg):
         # GUI init
         self.title = 'Plume Cauchian'
+
+        # Molecule variables
+        self.var_molecules_conformations = tk.IntVar()
 
         # Job variables
         self.var_optimization = tk.StringVar()
@@ -208,8 +211,19 @@ class CauchianDialog(ModelessDialog):
         # Select molecules
         self.ui_molecule_frame = tk.LabelFrame(self.canvas, text='Select molecules')
         self.ui_molecules = MoleculeScrolledListBox(self.ui_molecule_frame)
-        self.ui_molecules.pack(expand=True, fill='both', padx=5, pady=5)
-        self._fix_styles(self.ui_molecules)
+        self.ui_molecules_master = tk.Button(self.canvas, text='Set model')
+        self.ui_molecules_slave = tk.Button(self.canvas, text='Set replica(s)')
+        self.ui_molecules_conformations = tk.Checkbutton(self.canvas, 
+            text='Process frames',
+            variable=self.var_molecules_conformations)
+        self.ui_molecule_frame.columnconfigure(0, weight=1)
+        mol_options = {'sticky': 'news', 'padx': 5, 'pady': 5}
+        self.ui_molecules.grid(in_=self.ui_molecule_frame, row=0, column=0, rowspan=3, **mol_options)
+        self.ui_molecules_master.grid(in_=self.ui_molecule_frame, row=0, column=1, **mol_options)
+        self.ui_molecules_slave.grid(in_=self.ui_molecule_frame, row=1, column=1, **mol_options)
+        self.ui_molecules_conformations.grid(in_=self.ui_molecule_frame, row=2, column=1, **mol_options)
+        self._fix_styles(self.ui_molecules, self.ui_molecules_master, 
+                         self.ui_molecules_slave, self.ui_molecules_conformations)
 
         # Modelization
         self.ui_model_frame = tk.LabelFrame(self.canvas, text='Modelization')
@@ -333,12 +347,16 @@ class CauchianDialog(ModelessDialog):
                   [self.ui_flex_frame, self.ui_charges_frame] ]
         self.auto_grid(self.canvas, frames, resize_columns=(0,1), sticky='news')
         self.ui_hw_frame.grid(row=len(frames), columnspan=2, sticky='ew', padx=5, pady=5)
-        self.ui_preview_frame.grid(row=len(frames)+1, columnspan=2, sticky='ew', padx=5, pady=5)
+        self.canvas.rowconfigure(100, weight=1)
+        self.ui_preview_frame.grid(row=100, columnspan=2, sticky='news', padx=5, pady=5)
 
-    def Save(self):
+    def Export(self):
         """
         Default! Triggered action if you click on an Apply button
         """
+        pass
+
+    def Import(self):
         pass
 
     def Preview(self):

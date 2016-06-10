@@ -6,7 +6,6 @@ from __future__ import print_function, division
 # Python stdlib
 from string import ascii_letters
 import sys
-sys.tracebacklimit = 0
 # Chimera stuff
 # Additional 3rd parties
 # Own
@@ -431,6 +430,6 @@ class GaussianAtom(object):
         return ''.join(map(str, line))
 
 if __name__ == '__main__':
-    atom = GaussianAtom(element='C', coordinates=None, atom_type='CT', charge=1.0,
+    atom = GaussianAtom(element='C', coordinates=(10, 10, 10), atom_type='CT', charge=1.0,
                         residue_number=1, oniom_layer='H')
     print(atom)
