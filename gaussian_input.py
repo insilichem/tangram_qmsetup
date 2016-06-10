@@ -7,8 +7,7 @@ from __future__ import print_function, division
 from string import ascii_letters
 import sys
 import os
-from itertools import product
-
+from collections import namedtuple
 # Chimera stuff
 # Additional 3rd parties
 # Own
@@ -50,7 +49,9 @@ QM_BASIS_SETS = ('STO-3G', '3-21G', '6-21G', '4-31G', '6-31G', "6-31G(d')",
                  'CEP-31G', 'CEP-121G', 'LanL2MB', 'LanL2DZ', 'SDD', 'SDDAll',
                  'cc-pVDZ', 'cc-pVTZ', 'cc-pVQZ', 'cc-pV5Z', 'cc-pV6Z')
 QM_BASIS_SETS_EXT = ('', '+', '++', '*', '**')
-QM_BASIS_SETS_ALL = [''.join(p) for p in product(QM_BASIS_SETS, QM_BASIS_SETS_EXT)]
+QM_BASIS_SETS_WITH_ARGS = ('SDD', 'SHC')
+
+CustomBasisSet = namedtuple('CustomBasisSet', ['basis_set', 'elements', 'extra'])
 
 
 class GaussianInputFile(object):
@@ -145,12 +146,14 @@ class GaussianInputFile(object):
         method = self.qm_method
         if method == 'DFT':
             method = self.qm_functional
-        basis = 'genecp' if self._qm_basis_sets_extra else self.qm_basis_set
+        basis = 'gen' if self._qm_basis_sets_extra else self.qm_basis_set
         forcefield = self.mm_forcefield
         if forcefield:
+            if basis == 'gen':  # QMMM jobs usually specify ECP too
+                basis = 'genecp'
             if self._mm_forcefield_extra:
-                return 'oniom({}/{}:{}/hardfirst)'.format(method, basis, forcefield)
-            return'oniom({}/{}:{})'.format(method, basis, forcefield)
+                return 'oniom=({}/{}:{}/hardfirst)'.format(method, basis, forcefield)
+            return'oniom=({}/{}:{})'.format(method, basis, forcefield)
         return '{}/{}'.format(method, basis)
 
     # Job type
@@ -161,7 +164,7 @@ class GaussianInputFile(object):
     @job.setter
     def job(self, value):
         if value not in JOB_TYPES:
-            raise ValueError('job must be either of {}'.format(JOB_TYPES))
+            raise ValueError('Job must be either of {}'.format(JOB_TYPES))
         self._job = value
         self._route[value] = ()
 
@@ -193,7 +196,7 @@ class GaussianInputFile(object):
         elif value is True:
             self._route['freq'] = ()
         else:
-            raise ValueError('freq value must be str or bool')
+            raise ValueError('freq must be str or bool')
 
     # QM model
     @property
@@ -203,7 +206,7 @@ class GaussianInputFile(object):
     @qm_method.setter
     def qm_method(self, value):
         if value not in QM_METHODS:
-            raise ValueError('method must be either of {}'.format(','.join(QM_METHODS)))
+            raise ValueError('Method must be either of {}'.format(','.join(QM_METHODS)))
         self._qm_method = value
 
     @property
@@ -225,14 +228,14 @@ class GaussianInputFile(object):
 
     @qm_basis_set.setter
     def qm_basis_set(self, value):
-        if value not in QM_BASIS_SETS_ALL:
-            raise ValueError('basis set {} not recognized'.format(value))
+        if value.rstrip('+*') not in QM_BASIS_SETS:
+            raise ValueError('Basis set {} not recognized'.format(value))
         self._qm_basis_set = value
 
-    def qm_basis_set_extra(self, basis_set, *elements):
-        if basis_set not in QM_BASIS_SETS_ALL:
-            raise ValueError('basis set {} not recognized'.format(basis_set))
-        self._qm_basis_sets_extra[basis_set] = elements
+    def add_extra_basis_set(self, basis_set, elements, extra_args=None, position=None):
+        basis_set = CustomBasisSet(basis_set, elements, extra_args=extra_args,
+                                   position=position)
+        self._qm_basis_sets_extra.append(basis_set)
 
     # MM model
     @property
@@ -242,7 +245,7 @@ class GaussianInputFile(object):
     @mm_forcefield.setter
     def mm_forcefield(self, value):
         if value not in MM_FORCEFIELDS:
-            raise ValueError('forcefield {} not recognized'.format(value))
+            raise ValueError('Forcefield {} not recognized'.format(value))
         self._mm_forcefield = value
 
     def mm_forcefield_extra(self, value):
@@ -690,6 +693,73 @@ class GaussianAtom(object):
 
         return ''.join(map(str, line))
 
+
+class CustomBasisSet(object):
+
+    def __init__(self, basis_set, elements, position=0, extra_args="",):
+        if basis_set.rstrip('+*') not in QM_BASIS_SETS:
+            raise ValueError('Basis set {} not recognized'.format(basis_set))
+        if basis_set in QM_BASIS_SETS_WITH_ARGS and not extra_args:
+            raise ValueError('{} requires extra_args'.format(basis_set))
+        if position and len(elements) > 1:
+            raise ValueError('Position can only be set if one element is suppled')
+        self.basis_set = basis_set
+        self.position = position
+        self.extra_args = extra_args
+        self.elements = elements
+
+    def __str__(self):
+        lines = [' '.join(self.elements), self.position]
+        lines.append(self.basis_set)
+        lines.append(self.extra_args)
+        lines.append(' ****')
+        return '\n'.join(lines)
+
+    @classmethod
+    def from_database(cls, basis_set, element, database='cosmologic-services'):
+        """
+        Import basis_set from online database.
+
+        TODO:
+            Support https://bse.pnl.gov/bse/portal/
+            Support http://cosmologic-services.de/basis-sets/basissets.php
+        """
+        try:
+            import re
+            import requests
+            from bs4 import BeautifulSoup
+        except ImportError:
+            raise ImportError('You need to install requests and beautifulsoup4 '
+                              'to import basis sets from online databases.')
+        api = {
+            'cosmologic-services': {
+                'url': 'http://cosmologic-services.de/basis-sets/getbasis.php',
+                'bs_parser': 'html.parser',
+                'data': {'basis': basis_set, element: element, 
+                         'kind': 'Basis', 'format': 'Gaussian'}
+            },
+            'EMSL': {  # TODO: Output renders via JS!
+                'url': 'http://www.emsl.pnl.gov/cgi-bin/ecce/basis_old.pl',
+                'bs_parser': 'html.parser',
+                'data': {'BasisSets': basis_set,  'atoms': element,
+                         'Codes': 'Gaussian94', 'Optimize': 'on', 'ECP': 'on'}
+            },
+            'comp.chem.umn.edu': {
+                'url': 'http://comp.chem.umn.edu/basissets/basis.cgi',
+                'bs_parser': 'html.parser',
+                'data': {'basis_list': basis_set, 'element_list': element,
+                         'format_list': 'Gaussian'}
+            }
+        }
+        db = api[database]
+        r = requests.post(db['url'], db['data'])
+        if not r.ok:
+            raise ValueError('Could not retrieve data from {}'.format(database))
+        html = BeautifulSoup(r.content, db['bs_parser'])
+        if database in ('cosmologic-services', 'EMSL'):
+            return html.find('pre').text
+        if database in ('comp.chem.umn.edu'):
+            return re.findall(r'webmaster@comp.chem.umn.edu(.*)', html.find('body').text)[0]
 
 def import_from_frcmod(path):
     pass
