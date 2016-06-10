@@ -15,6 +15,9 @@ from chimera.widgets import MoleculeScrolledListBox
 
 # Own
 from core import Controller, Model
+from gaussian_input import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, 
+                            QM_METHODS, QM_FUNCTIONALS, QM_BASIS_SETS, 
+                            QM_BASIS_SETS_EXT)
 
 """
 The gui.py module contains the interface code, and only that. 
@@ -95,29 +98,6 @@ class CauchianDialog(ModelessDialog):
     If you don't want this behaviour and instead you want your extension to 
     claim exclusive usage, use ModalDialog.
     """
-
-    QM_METHODS = ['DFT', 'HF', 'MP2']
-    QM_FUNCTIONALS = {
-        'Pure': ['VSXC', 'HCTH', 'HCTH93', 'HCTH147', 'HCTH407', 'tHCTH',
-                 'M06L', 'B97D', 'B97D3', 'SOGGA11', 'M11L', 'N12', 'MN12L'],
-        'Hybrid': ['B3LYP', 'B3P86', 'B3PW91', 'B1B95', 'mPW1PW91', 'mPW1LYP',
-                   'mPW1PBE', 'mPW3PBE', 'B98', 'B971', 'B972', 'PBE1PBE', 'B1LYP',
-                   'O3LYP', 'BHandH', 'BHandHLYP', 'BMK', 'M06', 'M06HF', 'M062X',
-                   'tHCTHhyb', 'APFD', 'APF', 'SOGGA11X', 'PBEh1PBE', 'TPSSh', 'X3LYP'],
-        'RS hybrid': ['HSEH1PBE', 'OHSE2PBE', 'OHSE1PBE', 'wB97XD', 'wB97', 'wB97X',
-                      'LC-wPBE', 'CAM-B3LYP', 'HISSbPBE', 'M11', 'N12SX', 'MN12SX']
-    }
-    QM_BASIS_SETS = ['STO-3G', '3-21G', '6-21G', '4-31G', '6-31G', "6-31G(d')",
-                     "6-31G(d',p')", '6-311G', 'D95V', 'D95', 'SHC', 'CEP-4G',
-                     'CEP-31G', 'CEP-121G', 'LanL2MB', 'LanL2DZ', 'SDD', 'SDDAll',
-                     'cc-pVDZ', 'cc-pVTZ', 'cc-pVQZ', 'cc-pV5Z', 'cc-pV6Z']
-    QM_BASIS_SETS_EXT = ['', '+', '++', '*', '**']
-    # QM_BASIS_SETS_EXT = ['d,f-Diffuse (+)', 'p,d,f-Diffuse (++)', 'd,f-Polarization (*)', 'p,d,f-Polarization (**)']
-    MM_FORCEFIELDS = {
-        'General': ['Amber', 'Dreiding', 'UFF'],
-        'Water': ['TIP3P']
-    }
-    MEM_UNITS = ['TB', 'GB', 'MB']
 
     buttons = ('Preview', 'Export', 'Import', 'Close')
     default = None
@@ -250,19 +230,19 @@ class CauchianDialog(ModelessDialog):
         self.ui_qm_frame = tk.LabelFrame(self.canvas, text='QM Settings')
         self.ui_qm_methods = Pmw.OptionMenu(self.canvas,
                                             menubutton_textvariable=self.var_qm_method,
-                                            items=self.QM_METHODS)
+                                            items=QM_METHODS)
         self.ui_qm_functional_type = Pmw.OptionMenu(self.canvas,
                                                     menubutton_textvariable=self.var_qm_functional_type,
-                                                    items=sorted(self.QM_FUNCTIONALS.keys()))
+                                                    items=sorted(QM_FUNCTIONALS.keys()))
         self.ui_qm_functionals = Pmw.OptionMenu(self.canvas,
                                                 menubutton_textvariable=self.var_qm_functional,
-                                                items=self.QM_FUNCTIONALS['Pure'])
+                                                items=QM_FUNCTIONALS['Pure'])
         self.ui_qm_basis = Pmw.OptionMenu(self.canvas,
                                           menubutton_textvariable=self.var_qm_basis,
-                                          items=self.QM_BASIS_SETS)
+                                          items=QM_BASIS_SETS)
         self.ui_qm_basis_ext = Pmw.OptionMenu(self.canvas,
                                               menubutton_textvariable=self.var_qm_basis_ext,
-                                              items=self.QM_BASIS_SETS_EXT)
+                                              items=QM_BASIS_SETS_EXT)
         self.ui_qm_basis_per_atom = tk.Button(self.canvas, text='Per-element')
         self.ui_qm_basis_custom = tk.Entry(self.canvas, textvariable=self.var_qm_basis_custom)
         self.ui_qm_keywords = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_qm_keywords,
@@ -277,10 +257,10 @@ class CauchianDialog(ModelessDialog):
         self.ui_mm_frame = tk.LabelFrame(self.canvas, text='MM Settings')
         self.ui_mm_forcefields = Pmw.OptionMenu(self.canvas,
                                                 menubutton_textvariable=self.var_mm_forcefield,
-                                                items=self.MM_FORCEFIELDS['General'])
+                                                items=MM_FORCEFIELDS['General'])
         self.ui_mm_water_forcefield = Pmw.OptionMenu(self.canvas,
                                                 menubutton_textvariable=self.var_mm_water_forcefield,
-                                                items=self.MM_FORCEFIELDS['Water'])
+                                                items=MM_FORCEFIELDS['Water'])
         self.ui_mm_frcmod = tk.Entry(self.canvas, textvariable=self.var_mm_frcmod)
 
         mm_grid = [['Forcefield', self.ui_mm_forcefields],
@@ -328,7 +308,7 @@ class CauchianDialog(ModelessDialog):
         self.ui_memory = tk.Entry(self.canvas, textvariable=self.var_memory, width=5)
         self.ui_memory_units = Pmw.OptionMenu(self.canvas,
                                               menubutton_textvariable=self.var_memory_units,
-                                              items=self.MEM_UNITS)
+                                              items=MEM_UNITS)
         hw_grid = [['Title', self.ui_title, self.ui_title_btn,
                     ('# CPUs', self.ui_nproc)],
                    ['Checkpoint', self.ui_checkpoint, self.ui_checkpoint_btn, 
