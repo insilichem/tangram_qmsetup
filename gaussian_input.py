@@ -6,7 +6,8 @@ from __future__ import print_function, division
 # Python stdlib
 from string import ascii_letters
 import sys
-sys.tracebacklimit = 0
+import os
+from itertools import product
 # Chimera stuff
 # Additional 3rd parties
 # Own
@@ -18,11 +19,269 @@ if sys.version_info.major == 3:
 An object-oriented abstraction of a GAUSSIAN input file.
 """
 
+# QM_BASIS_SETS_EXT = ['d,f-Diffuse (+)', 'p,d,f-Diffuse (++)', 'd,f-Polarization (*)', 'p,d,f-Polarization (**)']
+MM_FORCEFIELDS = {
+    'General': ['Amber', 'Dreiding', 'UFF'],
+    'Water': ['TIP3P']
+}
+MEM_UNITS = ('KB', 'MB', 'GB', 'TB', 'KW', 'MW', 'GW', 'TW')
+JOB_TYPES = ('SP', 'Opt', 'IRC', 'IRCMax', 'Scan', 'Freq', 'Polar', 'ADMP',
+             'Force', 'Stable', 'Volume')
+QM_METHODS = ('AM1', 'PM3', 'PM3MM', 'PM6', 'PDDG', 'HF', 'DFT', 'CASSCF', 'MP2',
+              'MP3', 'MP4(SDQ)', 'MP4(SDTQ)', 'MP5', 'QCISD', 'CCD', 'CCSD',
+              'QCISD(T)', 'QCISD(TQ)', 'BD', 'EPT', 'CBS', 'W1', 'CIS', 'TD',
+              'EOM', 'ZINDO', 'DFTB', 'CI', 'GVB', 'G1', 'G2', 'G2MP2', 'G3',
+              'G3MP2', 'G3B3', 'G3MP2B3', 'G4', 'G4MP2')
+QM_FUNCTIONALS = {
+    'Pure':      ('VSXC', 'HCTH', 'HCTH93', 'HCTH147', 'HCTH407', 'tHCTH',
+                  'M06L', 'B97D', 'B97D3', 'SOGGA11', 'M11L', 'N12', 'MN12L'),
+    'Hybrid':    ('B3LYP', 'B3P86', 'B3PW91', 'B1B95', 'mPW1PW91', 'mPW1LYP',
+                  'mPW1PBE', 'mPW3PBE', 'B98', 'B971', 'B972', 'PBE1PBE', 'B1LYP',
+                  'O3LYP', 'BHandH', 'BHandHLYP', 'BMK', 'M06', 'M06HF', 'M062X',
+                  'tHCTHhyb', 'APFD', 'APF', 'SOGGA11X', 'PBEh1PBE', 'TPSSh', 'X3LYP'),
+    'RS hybrid': ('HSEH1PBE', 'OHSE2PBE', 'OHSE1PBE', 'wB97XD', 'wB97', 'wB97X',
+                  'LC-wPBE', 'CAM-B3LYP', 'HISSbPBE', 'M11', 'N12SX', 'MN12SX')
+}
+QM_FUNCTIONALS_ALL = set(f for v in QM_FUNCTIONALS.values() for f in v)
+
+QM_BASIS_SETS = ('STO-3G', '3-21G', '6-21G', '4-31G', '6-31G', "6-31G(d')",
+                 "6-31G(d',p')", '6-311G', 'D95V', 'D95', 'SHC', 'CEP-4G',
+                 'CEP-31G', 'CEP-121G', 'LanL2MB', 'LanL2DZ', 'SDD', 'SDDAll',
+                 'cc-pVDZ', 'cc-pVTZ', 'cc-pVQZ', 'cc-pV5Z', 'cc-pV6Z')
+QM_BASIS_SETS_EXT = ('', '+', '++', '*', '**')
+QM_BASIS_SETS_ALL = [''.join(p) for p in product(QM_BASIS_SETS, QM_BASIS_SETS_EXT)]
+
 
 class GaussianInputFile(object):
 
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, title='Untitled job', *args, **kwargs):
+        self.title = title
+        self._route = {}
+        self._link = {}
+        self._job = None
+        self._qm_method = None
+        self._qm_functional = None
+        self._qm_basis_set = None
+        self._qm_basis_sets_extra = {}
+        self._restraints = []
+        self._mm_forcefield = None
+        self._mm_forcefield_extra = None
+
+    # Link 0 section
+    @property
+    def link(self):
+        s = []
+        for keyword, options in self._route.items():
+            if not options:
+                s.append('%' + keyword)
+            else:
+                s.append('%{}={}'.format(keyword, ','.join(options)))
+        return '\n'.join(s)
+
+    def add_link_option(self, keyword, *options):
+        self._link[keyword] = options
+
+    @property
+    def processors(self):
+        return self._link.get('nprocshared')
+
+    @processors.setter
+    def processors(self, value):
+        if value < 1:
+            raise ValueError('processors must be greater than 0')
+        self._link['nprocshared'] = int(value)
+
+    @property
+    def memory(self):
+        return self._memory
+
+    @memory.setter
+    def memory(self, value):
+        mem_units = 'MB'
+        if isinstance(value, tuple):
+            if len(value) == 1:
+                value = value
+            elif len(value) == 2:
+                value, mem_units = value
+            else:
+                ValueError('Set memory with: <value>[, "units"]')
+        if value <= 0:
+            raise ValueError('Memory value must be greater than 0')
+        if mem_units not in MEM_UNITS:
+            raise ValueError('Memory unit not recognized.')
+        self._memory = int(value), mem_units
+        self._link['mem'] = '{}{}'.format(*self._memory)
+
+    @property
+    def checkpoint(self):
+        return self._link.get('chk')
+
+    @checkpoint.setter
+    def checkpoint(self, value):
+        # if not os.path.isfile(value):
+        #     raise ValueError('File {} does not exist'.format(value))
+        self._link['chk'] = value
+
+    ########################################################
+    @property
+    def route(self):
+        s = ['#p', self.modeling]
+
+        for keyword, options in self._route.items():
+            if not options:
+                s.append(keyword)
+            elif len(options) == 1:
+                s.append('{}={}'.format(keyword, *options))
+            else:
+                s.append('{}=({})'.format(keyword, ','.join(options)))
+        return ' '.join(s)
+
+    def add_route_option(self, keyword, *options):
+        self._route[keyword] = options
+
+    @property
+    def modeling(self):
+        method = self.qm_method
+        if method == 'DFT':
+            method = self.qm_functional
+        basis = 'genecp' if self._qm_basis_sets_extra else self.qm_basis_set
+        forcefield = self.mm_forcefield
+        if forcefield:
+            if self._mm_forcefield_extra:
+                return 'oniom({}/{}:{}/hardfirst)'.format(method, basis, forcefield)
+            return'oniom({}/{}:{})'.format(method, basis, forcefield)
+        return '{}/{}'.format(method, basis)
+
+    # Job type
+    @property
+    def job(self):
+        return self._job
+
+    @job.setter
+    def job(self, value):
+        if value not in JOB_TYPES:
+            raise ValueError('job must be either of {}'.format(JOB_TYPES))
+        self._job = value
+        self._route[value] = ()
+
+    @property
+    def job_options(self):
+        return self._route.get(self._job, ())
+
+    @job_options.setter
+    def job_options(self, value):
+        if not isinstance(value, (tuple, list)):
+            value = [value]
+        self._route[self._job] = value
+
+    @property
+    def freq(self):
+        if 'freq' in self._route:
+            freq_ = self._route.get('freq')
+            if freq_:
+                return freq_
+            return True
+        return False
+
+    @freq.setter
+    def freq(self, value):
+        if self._job not in ('Opt', 'Polar'):
+            raise ValueError('Freq can only be set if job is Opt or Polar.')
+        if isinstance(value, basestring):
+            self._route['freq'] = value
+        elif value is True:
+            self._route['freq'] = ()
+        else:
+            raise ValueError('freq value must be str or bool')
+
+    # QM model
+    @property
+    def qm_method(self):
+        return self._qm_method
+
+    @qm_method.setter
+    def qm_method(self, value):
+        if value not in QM_METHODS:
+            raise ValueError('method must be either of {}'.format(','.join(QM_METHODS)))
+        self._qm_method = value
+
+    @property
+    def qm_functional(self):
+        return self._qm_functional
+
+    @qm_functional.setter
+    def qm_functional(self, value):
+        if self.qm_method != 'DFT':
+            raise ValueError('Funtionals can only be set if method == DFT')
+        if value not in QM_FUNCTIONALS_ALL:
+            raise ValueError('functional {} not recognized'.format(value))
+
+    @property
+    def qm_basis_set(self):
+        if self._qm_basis_sets_extra:
+            return self._qm_basis_set, self._qm_basis_sets_extra
+        return self._qm_basis_set
+
+    @qm_basis_set.setter
+    def qm_basis_set(self, value):
+        if value not in QM_BASIS_SETS_ALL:
+            raise ValueError('basis set {} not recognized'.format(value))
+        self._qm_basis_set = value
+
+    def qm_basis_set_extra(self, basis_set, *elements):
+        if basis_set not in QM_BASIS_SETS_ALL:
+            raise ValueError('basis set {} not recognized'.format(basis_set))
+        self._qm_basis_sets_extra[basis_set] = elements
+
+    # MM model
+    @property
+    def mm_forcefield(self):
+        return self._mm_forcefield
+
+    @mm_forcefield.setter
+    def mm_forcefield(self, value):
+        if value not in MM_FORCEFIELDS:
+            raise ValueError('forcefield {} not recognized'.format(value))
+        self._mm_forcefield = value
+
+    def mm_forcefield_extra(self, value):
+        if value.endswith('.frcmod') and os.path.isfile(value):
+            value = import_from_frcmod(value)
+        else:
+            raise ValueError('Supply a .frcmod file to load new parameters')
+        self._mm_forcefield_extra = value
+
+    # ModRedundant restraints
+    @property
+    def restraints(self):
+        return self._restraints
+
+    def add_restraint(self, restraint, atoms, min_=None, max_=None, diag_elem=None,
+                      nsteps=None, stepsize=None):
+        if restraint not in ('A', 'F', 'B', 'K', 'R', 'D', 'H', 'S'):
+            raise ValueError('Restraint {} not recognized'.format(restraint))
+        if not (1 <= len(atoms) <= 4):
+            raise ValueError('Supply between 1 and 4 atoms.')
+        if not all(isinstance(i, int) or i == '*' for i in atoms):
+            raise ValueError('Atoms must be int or *')
+
+        prefixes = ['X', 'B', 'A', 'D']
+        line = [prefixes[len(atoms) - 1]]
+        line.extend(atoms)
+        line.append(restraint)
+        if restraint == 'H':
+            if diag_elem is None:
+                raise ValueError('diag_elem must be set if restraint == H')
+            line.append(diag_elem)
+        elif restraint == 'S':
+            if None in (nsteps, stepsize):
+                raise ValueError('nsteps and stepsize must be set if restraint == S')
+            line.extend([nsteps, stepsize])
+        if max_ is not None:
+            if min_ is not None:
+                line.append(min_)
+            line.append(max_)
+        self._restraints.append(' '.join(map(str, line)))
 
 
 class GaussianAtom(object):
@@ -430,7 +689,11 @@ class GaussianAtom(object):
 
         return ''.join(map(str, line))
 
+
+def import_from_frcmod(path):
+    pass
+
 if __name__ == '__main__':
-    atom = GaussianAtom(element='C', coordinates=None, atom_type='CT', charge=1.0,
+    atom = GaussianAtom(element='C', coordinates=(10, 10, 10), atom_type='CT', charge=1.0,
                         residue_number=1, oniom_layer='H')
     print(atom)
