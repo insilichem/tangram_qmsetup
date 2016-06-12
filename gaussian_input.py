@@ -725,7 +725,6 @@ class CustomBasisSet(object):
             Support http://cosmologic-services.de/basis-sets/basissets.php
         """
         try:
-            import re
             import requests
             from bs4 import BeautifulSoup
         except ImportError:
@@ -733,36 +732,68 @@ class CustomBasisSet(object):
                               'to import basis sets from online databases.')
         api = {
             'cosmologic-services': {
+                'header': '! Downloaded from http://cosmologic-services.de/basis-sets/basissets.php',
                 'url': 'http://cosmologic-services.de/basis-sets/getbasis.php',
                 'bs_parser': 'html.parser',
+                'parser': cls._cosmo_parser,
                 'data': {'basis': basis_set, element: element, 
                          'kind': 'Basis', 'format': 'Gaussian'}
             },
-            'EMSL': {  # TODO: Output renders via JS!
-                'url': 'http://www.emsl.pnl.gov/cgi-bin/ecce/basis_old.pl',
-                'bs_parser': 'html.parser',
-                'data': {'BasisSets': basis_set,  'atoms': element,
-                         'Codes': 'Gaussian94', 'Optimize': 'on', 'ECP': 'on'}
-            },
             'comp.chem.umn.edu': {
+                'header': '! Downloaded from http://comp.chem.umn.edu/basissets/basis.cgi',
                 'url': 'http://comp.chem.umn.edu/basissets/basis.cgi',
                 'bs_parser': 'html.parser',
+                'parser': cls._umn_parser,
                 'data': {'basis_list': basis_set, 'element_list': element,
                          'format_list': 'Gaussian'}
             }
         }
-        db = api[database]
-        r = requests.post(db['url'], db['data'])
+        try:
+            db = api[database]
+        except KeyError:
+            raise ValueError('Database {} not supported'.format(database))
+        try:
+            r = requests.post(db['url'], db['data'], timeout=10)
+        except requests.exceptions.RequestException:
+            raise
         if not r.ok:
             raise ValueError('Could not retrieve data from {}'.format(database))
         html = BeautifulSoup(r.content, db['bs_parser'])
-        if database in ('cosmologic-services', 'EMSL'):
-            return html.find('pre').text
-        if database in ('comp.chem.umn.edu'):
-            return re.findall(r'webmaster@comp.chem.umn.edu(.*)', html.find('body').text)[0]
+        return '\n'.join([db['header'], db['parser'](html)])
+
+    @staticmethod
+    def _cosmo_parser(html):
+        return html.find('pre').text
+
+    @staticmethod
+    def _umn_parser(html):
+        text = str(html.find('body').contents[4])
+        return text.replace('<br>', '\n').replace('</br>', '').replace(u'\xa0', u' ')
+
+    @classmethod
+    def from_bse(cls, basis_set, *elements):
+        try:
+            from ebsel import EMSL_local
+        except ImportError:
+            raise ImportError('Access to Basis Set Exchange db requires ebsel package')
+
+        db = EMSL_local.EMSL_local(fmt="g94")
+        try:
+            basis = db.get_basis(basis_set, elements=elements)
+        except UnboundLocalError:
+            if basis_set not in [b for (b, d) in db.get_available_basis_sets()]:
+                raise ValueError('Basis set {} not recognized'.format(basis_set))
+            supported_elements = db.get_available_elements(basis_set)
+            for element in elements:
+                if element not in supported_elements:
+                    raise ValueError('Basis set {} does not support element {}'.format(basis_set, element))
+        else:
+            # prepend a '-' to each element to prevent Gaussian errors if atom not present in system
+            return '\n'.join([b.replace('****\n', '****\n-') for b in basis])
+
 
 def import_from_frcmod(path):
-    pass
+    pass 
 
 if __name__ == '__main__':
     atom = GaussianAtom(element='C', coordinates=(10, 10, 10), atom_type='CT', charge=1.0,

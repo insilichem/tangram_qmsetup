@@ -15,6 +15,7 @@ from chimera.widgets import MoleculeScrolledListBox
 
 # Own
 from core import Controller, Model
+from periodictable import BasisSetDialog
 from gaussian_input import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, 
                             QM_METHODS, QM_FUNCTIONALS, QM_BASIS_SETS, 
                             QM_BASIS_SETS_EXT)
@@ -123,6 +124,7 @@ class CauchianDialog(ModelessDialog):
         self.var_qm_basis = tk.StringVar()
         self.var_qm_basis_ext = tk.StringVar()
         self.var_qm_basis_custom = tk.StringVar()
+        self.var_qm_basis_extra = {}
         self.var_qm_basis.trace('w', self._basis_sets_custom_build)
         self.var_qm_basis_ext.trace('w', self._basis_sets_custom_build)
         self.var_qm_keywords = tk.StringVar()
@@ -150,6 +152,9 @@ class CauchianDialog(ModelessDialog):
         self.var_nproc = tk.IntVar()
         self.var_memory = tk.IntVar()
         self.var_memory_units = tk.StringVar()
+
+        # Misc
+        self._basis_set_dialog = None
 
         # Fire up
         ModelessDialog.__init__(self)
@@ -243,7 +248,7 @@ class CauchianDialog(ModelessDialog):
         self.ui_qm_basis_ext = Pmw.OptionMenu(self.canvas,
                                               menubutton_textvariable=self.var_qm_basis_ext,
                                               items=QM_BASIS_SETS_EXT)
-        self.ui_qm_basis_per_atom = tk.Button(self.canvas, text='Per-element')
+        self.ui_qm_basis_per_atom = tk.Button(self.canvas, text='Per-element', command=self._enter_custombasisset)
         self.ui_qm_basis_custom = tk.Entry(self.canvas, textvariable=self.var_qm_basis_custom)
         self.ui_qm_keywords = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_qm_keywords,
                                            history=True, unique=True, dropdown=True)
@@ -412,7 +417,7 @@ class CauchianDialog(ModelessDialog):
             widget.pack(in_=parent, **options)
             self._fix_styles(widget)
 
-if __name__ == '__main__':
-    master = tk.Tk()
-    master.mainloop()
-    showUI(parent=master)
+    def _enter_custombasisset(self):
+        if self._basis_set_dialog is None:
+            self._basis_set_dialog = BasisSetDialog(self.var_qm_basis_extra, parent=self)
+        self._basis_set_dialog.enter()
