@@ -6,6 +6,7 @@ from __future__ import print_function, division
 # Python stdlib
 import Tkinter as tk
 import Pmw
+from multiprocessing import cpu_count
 # Chimera stuff
 import chimera
 import chimera.tkgui
@@ -115,7 +116,8 @@ class CauchianDialog(ModelessDialog):
         self.var_molecules_conformations = tk.IntVar()
 
         # Job variables
-        self.var_optimization = tk.StringVar()
+        self.var_job = tk.StringVar()
+        self.var_job_options = tk.StringVar()
         self.var_frequencies = tk.IntVar()
         self.var_calculation = tk.StringVar()
         self.var_solvent = tk.StringVar()
@@ -151,13 +153,15 @@ class CauchianDialog(ModelessDialog):
 
         # Hardware & Output variables
         self.var_title = tk.StringVar()
-        self.var_checkpoint = tk.StringVar()
+        self.var_checkpoint = tk.IntVar()
+        self.var_checkpoint_path = tk.StringVar()
         self.var_nproc = tk.IntVar()
         self.var_memory = tk.IntVar()
         self.var_memory_units = tk.StringVar()
 
         # Misc
         self._basis_set_dialog = None
+        self.ui_labels = {}
 
         # Fire up
         ModelessDialog.__init__(self)
@@ -204,18 +208,22 @@ class CauchianDialog(ModelessDialog):
         self.ui_molecules_conformations = tk.Checkbutton(self.canvas, text='Process frames',
                                                          variable=self.var_molecules_conformations)
         self.ui_molecule_frame.columnconfigure(0, weight=1)
-        mol_options = {'sticky': 'news', 'padx': 5, 'pady': 5}
-        self.ui_molecules.grid(in_=self.ui_molecule_frame, row=0, column=0, rowspan=3, **mol_options)
-        self.ui_molecules_master.grid(in_=self.ui_molecule_frame, row=0, column=1, **mol_options)
-        self.ui_molecules_slave.grid(in_=self.ui_molecule_frame, row=1, column=1, **mol_options)
-        self.ui_molecules_conformations.grid(in_=self.ui_molecule_frame, row=2, column=1, **mol_options)
+        self.ui_molecule_frame.rowconfigure(0, weight=1)
+        mol_options = {'padx': 5, 'pady': 5}
+        self.ui_molecules.grid(in_=self.ui_molecule_frame, row=0, column=0, rowspan=4, sticky='news', **mol_options)
+        self.ui_molecules_master.grid(in_=self.ui_molecule_frame, row=1, column=1, sticky='we', **mol_options)
+        self.ui_molecules_slave.grid(in_=self.ui_molecule_frame, row=2, column=1, sticky='we', **mol_options)
+        self.ui_molecules_conformations.grid(in_=self.ui_molecule_frame, row=3, column=1, sticky='we', **mol_options)
         self._fix_styles(self.ui_molecules, self.ui_molecules_master, 
                          self.ui_molecules_slave, self.ui_molecules_conformations)
 
         # Modelization
         self.ui_model_frame = tk.LabelFrame(self.canvas, text='Modelization')
-        self.ui_optimization = Pmw.OptionMenu(self.canvas,
-                                              menubutton_textvariable=self.var_optimization,
+        self.ui_job = Pmw.OptionMenu(self.canvas,
+                                              menubutton_textvariable=self.var_job,
+                                              items=JOB_TYPES)
+        self.ui_job_options = Pmw.OptionMenu(self.canvas,
+                                              menubutton_textvariable=self.var_job_options,
                                               items=['No', 'Min', 'TS'])
         self.ui_frequencies = tk.Checkbutton(self.canvas, variable=self.var_frequencies,
                                              text='Get frequencies')
@@ -228,9 +236,10 @@ class CauchianDialog(ModelessDialog):
                                          items=['Implicit', 'Explicit'])
         self.ui_solvent_cfg = tk.Button(self.canvas, text='Configure')
 
-        model_grid = [['Optimize', self.ui_optimization, self.ui_frequencies],
-                      ['Calculation', self.ui_calculation, self.ui_layers],
-                      ['Solvation', self.ui_solvent, self.ui_solvent_cfg]]
+        model_grid = [['Model', self.ui_calculation, self.ui_layers],
+                      ['Job', self.ui_job, self.ui_job_options],
+                      ['', '', self.ui_frequencies],
+                      ['Solvent', self.ui_solvent, self.ui_solvent_cfg]]
         self.auto_grid(self.ui_model_frame, model_grid)
 
         # QM configuration
@@ -309,17 +318,17 @@ class CauchianDialog(ModelessDialog):
         self.ui_hw_frame = tk.LabelFrame(self.canvas, text='Output')
         self.ui_title = tk.Entry(self.canvas, textvariable=self.var_title)
         self.ui_title_btn = tk.Button(self.canvas, text='Random')
-        self.ui_checkpoint = tk.Entry(self.canvas, textvariable=self.var_checkpoint)
+        self.ui_checkpoint = tk.Checkbutton(self.canvas, variable=self.var_checkpoint, text='Check:')
+        self.ui_checkpoint_fld = tk.Entry(self.canvas, textvariable=self.var_checkpoint_path)
         self.ui_checkpoint_btn = tk.Button(self.canvas, text='Browse')
         self.ui_nproc = tk.Entry(self.canvas, textvariable=self.var_nproc, width=5)
+        self.ui_nproc_btn = tk.Button(self.canvas, text='Get', command=lambda:self.var_nproc.set(cpu_count()))
         self.ui_memory = tk.Entry(self.canvas, textvariable=self.var_memory, width=5)
         self.ui_memory_units = Pmw.OptionMenu(self.canvas,
                                               menubutton_textvariable=self.var_memory_units,
                                               items=MEM_UNITS)
-        hw_grid = [['Title', self.ui_title, self.ui_title_btn,
-                    ('# CPUs', self.ui_nproc)],
-                   ['Checkpoint', self.ui_checkpoint, self.ui_checkpoint_btn, 
-                    ('Memory', self.ui_memory, self.ui_memory_units)]]
+        hw_grid = [['Job title', self.ui_title, self.ui_title_btn, '# CPUs', self.ui_nproc, self.ui_nproc_btn],
+                   [self.ui_checkpoint, self.ui_checkpoint_fld, self.ui_checkpoint_btn, 'Memory', self.ui_memory, self.ui_memory_units]]
         self.auto_grid(self.ui_hw_frame, hw_grid, sticky='news')
 
         # Live output
@@ -401,7 +410,8 @@ class CauchianDialog(ModelessDialog):
                     item = frame
                 elif isinstance(item, basestring):
                     sticky = 'e'
-                    item = tk.Label(parent, text=item + label_sep if item else '')
+                    label = self.ui_labels[item] = tk.Label(parent, text=item + label_sep if item else '')
+                    item = label 
                 elif isinstance(item, tk.Checkbutton):
                     sticky = 'w'
                 if 'sticky' not in kwargs:
@@ -413,7 +423,8 @@ class CauchianDialog(ModelessDialog):
         for widget in widgets:
             options = kwargs.copy()
             if isinstance(widget, basestring):
-                widget = tk.Label(parent, text=widget + label_sep if widget else '')
+                label = self.ui_labels[widget] = tk.Label(parent, text=widget + label_sep if widget else '')
+                widget = label
             if isinstance(widget, (tk.Button, tk.Label)):
                 options['expand'] = False
             widget.pack(in_=parent, **options)

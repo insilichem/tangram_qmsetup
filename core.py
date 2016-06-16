@@ -21,9 +21,12 @@ class Controller(object):
     and the data model. Actions such as clicks on buttons, enabling certain areas, 
     or running external programs, are the responsibility of the controller.
     """
-    def __init__(self, *args, **kwargs):
-        return
+    def __init__(self, gui=None, model=None, *args, **kwargs):
+        self.gui = gui
+        self.model = model
 
+    def set_mvc(self):
+        pass
 
 class Model(object):
 
