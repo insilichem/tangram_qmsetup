@@ -11,14 +11,10 @@ import chimera
 import chimera.tkgui
 from chimera.baseDialog import ModelessDialog
 from chimera.widgets import MoleculeScrolledListBox
-# Additional 3rd parties
-
 # Own
 from core import Controller, Model
-from periodictable import BasisSetDialog
-from gaussian_input import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, 
-                            QM_METHODS, QM_FUNCTIONALS, QM_BASIS_SETS, 
-                            QM_BASIS_SETS_EXT)
+from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
+                        QM_BASIS_SETS, QM_BASIS_SETS_EXT)
 
 """
 The gui.py module contains the interface code, and only that. 
@@ -26,24 +22,6 @@ It should only 'draw' the window, and should NOT contain any
 business logic like parsing files or applying modifications
 to the opened molecules. That belongs to core.py.
 """
-
-# This is a Chimera thing. Do it, and deal with it.
-ui = None
-def showUI(callback=None, *args, **kwargs):
-    """
-    Requested by Chimera way-of-doing-things
-    """
-    if chimera.nogui:
-        tk.Tk().withdraw()
-    global ui
-    if not ui:  # Edit this to reflect the name of the class!
-        ui = CauchianDialog(*args, **kwargs)
-    model = Model()
-    controller = Controller(gui=ui, model=model)
-    ui.enter()
-    if callback:
-        ui.addCallback(callback)
-
 
 STYLES = {
     tk.Entry: {
@@ -64,7 +42,7 @@ STYLES = {
         'menubutton_borderwidth': 1,
         'menu_relief': 'flat',
         'menu_activeborderwidth': 0,
-        'menu_activebackground': '#EEE',
+        'menu_activebackground': '#DDD',
         'menu_borderwidth': 1,
         'menu_background': 'white',
         'hull_borderwidth': 0,
@@ -82,12 +60,37 @@ STYLES = {
         'listbox_highlightthickness': 0,
         'scrolledlist_hull_borderwidth': 0
     },
+    Pmw.ScrolledListBox: {
+        'listbox_borderwidth': 1,
+        'listbox_background': 'white',
+        'listbox_relief': 'ridge',
+        'listbox_highlightthickness': 0,
+        'listbox_selectbackground': '#DDD',
+        'listbox_selectborderwidth': 0
+    },
     MoleculeScrolledListBox: {
         'listbox_borderwidth': 1,
         'listbox_background': 'white',
         'listbox_highlightthickness': 0,
     }
 }
+
+# This is a Chimera thing. Do it, and deal with it.
+ui = None
+def showUI(callback=None, *args, **kwargs):
+    """
+    Requested by Chimera way-of-doing-things
+    """
+    if chimera.nogui:
+        tk.Tk().withdraw()
+    global ui
+    if not ui:  # Edit this to reflect the name of the class!
+        ui = CauchianDialog(*args, **kwargs)
+    model = Model()
+    controller = Controller(gui=ui, model=model)
+    ui.enter()
+    if callback:
+        ui.addCallback(callback)
 
 
 class CauchianDialog(ModelessDialog):
@@ -198,9 +201,8 @@ class CauchianDialog(ModelessDialog):
         self.ui_molecules = MoleculeScrolledListBox(self.ui_molecule_frame)
         self.ui_molecules_master = tk.Button(self.canvas, text='Set model')
         self.ui_molecules_slave = tk.Button(self.canvas, text='Set replica(s)')
-        self.ui_molecules_conformations = tk.Checkbutton(self.canvas, 
-            text='Process frames',
-            variable=self.var_molecules_conformations)
+        self.ui_molecules_conformations = tk.Checkbutton(self.canvas, text='Process frames',
+                                                         variable=self.var_molecules_conformations)
         self.ui_molecule_frame.columnconfigure(0, weight=1)
         mol_options = {'sticky': 'news', 'padx': 5, 'pady': 5}
         self.ui_molecules.grid(in_=self.ui_molecule_frame, row=0, column=0, rowspan=3, **mol_options)
@@ -421,3 +423,227 @@ class CauchianDialog(ModelessDialog):
         if self._basis_set_dialog is None:
             self._basis_set_dialog = BasisSetDialog(self.var_qm_basis_extra, parent=self)
         self._basis_set_dialog.enter()
+
+###############################################
+#
+# CustomBasisSet Dialog
+#
+###############################################
+ELEMENTS = [
+    ["H",  "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",    "",    "",   "",    "He" ],
+    ["Li", "Be", "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "B",  "C",   "N",   "O",  "F",   "Ne" ],
+    ["Na", "Mg", "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "Al", "Si",  "P",   "S",  "Cl",  "Ar" ],
+    ["K",  "Ca", "Sc", "Ti", "V",  "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga",  "Ge", "As",  "Se", "Br",  "Kr" ],
+    ["Rb", "Sr", "Y",  "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In",  "Sn", "Sb",  "Te", "I",   "Xe" ],
+    ["Cs", "Ba", "",   "Hf", "Ta", "W",  "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl",  "Pb", "Bi",  "Po", "At",  "Rn" ],
+    ["Fr", "Ra", "",   "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Uut", "Fl", "Uup", "Lv", "Uus", "Uuo"],
+    ["",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",    "",    "",   "",    ""   ],
+    ["",   "",   "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho",  "Er", "Tm",  "Yb", "Lu",  ""   ],
+    ["",   "",   "Ac", "Th", "Pa", "U",  "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es",  "Fm", "Md",  "No", "Lr",  ""   ]]
+ALL_ELEMENTS = [element for row in ELEMENTS for element in row if element]
+
+
+class BasisSetDialog(ModelessDialog):
+
+    """
+    A Tkinter GUI to EMSL Basis Set Exchange database. Requires ebsel
+    as an API to local dumps of BSE.
+    """
+
+    buttons = ('OK', 'Close')
+    default = None
+    help = 'https://www.insilichem.com'
+
+    def __init__(self, saved_basis, parent=None, *args, **kwarg):
+        try:
+            from ebsel import EMSL_local
+        except ImportError:
+            raise chimera.UserError('Package ebsel not found. Please, install it first from:\n'
+                                    'https://github.com/jaimergp/ebsel')
+        # GUI init
+        self.parent = parent
+        self.title = 'BasisSet Database'
+        self._saved_basis = saved_basis
+        self.saved_basis = saved_basis.copy()
+
+        # Variables
+        self.var_elements = {e: tk.IntVar() for e in ALL_ELEMENTS}
+        # Constants
+        self.db = EMSL_local(fmt="g94")
+        self.db_basissets = sorted([b for (b, d) in self.db.get_available_basis_sets()])
+
+        # Fire up
+        ModelessDialog.__init__(self)
+        if not chimera.nogui:  # avoid useless errors during development
+            chimera.extension.manager.registerInstance(self)
+
+        # Fix styles
+        self._fix_styles(*self.buttonWidgets.values())
+        
+    def _initialPositionCheck(self, *args):
+        try:
+            ModelessDialog._initialPositionCheck(self, *args)
+        except Exception as e:
+            if not chimera.nogui:  # avoid useless errors during development
+                raise e
+
+    def _fix_styles(self, *widgets):
+        for widget in widgets:
+            try:
+                widget.configure(**STYLES[widget.__class__])
+            except Exception as e:
+                print('Error fixing styles:', type(e), str(e))
+
+    def OK(self):
+        self._saved_basis.clear()
+        self._saved_basis.update(self.saved_basis)
+        self.Close()
+
+    def Close(self):
+        self.parent._basis_set_dialog = None
+        ModelessDialog.Close(self)
+        self.destroy()
+
+    def fillInUI(self, parent):
+        """
+        This is the main part of the interface. With this method you code
+        the whole dialog, buttons, textareas and everything.
+        """
+        # Create main window
+        self.canvas = tk.Frame(parent)
+        self.canvas.pack(expand=True, fill='both')
+        self.canvas.columnconfigure(1, weight=1)
+        self.ui_basis_set_frame = tk.LabelFrame(self.canvas, text='Choose a basis set')
+        self.ui_basis_set_frame.grid(rowspan=2, row=0, column=0, sticky='news', pady=5, padx=5)
+        self.ui_basis_sets = Pmw.ScrolledListBox(self.ui_basis_set_frame,
+                                                 items=self.db_basissets,
+                                                 selectioncommand=self._cb_basissets_changed)
+        self.ui_basis_sets.pack(fill='y', expand=True, padx=2, pady=5)
+        self.ui_basis_set_restore = tk.Button(self.ui_basis_set_frame, text='Reset all',
+                                              command=self._reset_all)
+        self.ui_basis_set_restore.pack(fill='x', padx=2, pady=5)
+
+        self.ui_periodic_table = tk.LabelFrame(self.canvas, text='Choose elements')
+        self.ui_periodic_table.grid(row=0, column=1, columnspan=5, sticky='news', pady=5, padx=5)
+        self.ui_elements = {}
+        for i, row in enumerate(ELEMENTS):
+            for j, element in enumerate(row):
+                if element:
+                    w = tk.Checkbutton(self.ui_periodic_table, text=element,
+                                       variable=self.var_elements[element],
+                                       command=self._cb_elements_changed)
+                    self.ui_elements[element] = w
+                else:
+                    w = tk.Label(self.ui_periodic_table)
+                w.grid(row=i, column=j, sticky='w')
+
+        self.ui_output_frame = tk.LabelFrame(self.canvas, text='Basis set')
+        self.ui_output_frame.grid(row=1, column=1, columnspan=4, sticky='news', pady=5, padx=5)
+        self.ui_output = Pmw.ScrolledText(self.ui_output_frame, text_state='disabled',
+                                          text_padx=4, text_pady=4, usehullsize=True,
+                                          hull_width=300, hull_height=200, text_font='Courier')
+        self.ui_output.pack(expand=True, fill='both')
+
+        self.ui_saved_basis_frame = tk.LabelFrame(self.canvas, text='Your saved basis sets')
+        self.ui_saved_basis = Pmw.ScrolledListBox(self.ui_saved_basis_frame,
+                                                  items=sorted(self.saved_basis.keys()))
+        self.ui_saved_basis_add = tk.Button(self.ui_saved_basis_frame, text='Add current',
+                                            command=self._cb_saved_basis_add)
+        self.ui_saved_basis_del = tk.Button(self.ui_saved_basis_frame, text='Delete',
+                                            command=self._cb_saved_basis_del)
+        self.ui_saved_basis_frame.grid(row=1, column=5, sticky='news', pady=5, padx=5)
+        self.ui_saved_basis.grid(row=0, column=0, columnspan=2, sticky='news', pady=2, padx=2)
+        self.ui_saved_basis_add.grid(row=1, column=0, sticky='we', pady=2, padx=2)
+        self.ui_saved_basis_del.grid(row=1, column=1, sticky='we', pady=2, padx=2)
+
+        widgets =  [self.ui_basis_sets, self.ui_basis_set_restore, self.ui_output, 
+                    self.ui_saved_basis, self.ui_saved_basis_add, self.ui_saved_basis_del]
+        self._fix_styles(*widgets + self.ui_elements.values())
+
+    # Callbacks
+    def _cb_basissets_changed(self):
+        self._cb_selection_changed()
+
+    def _cb_elements_changed(self):
+        self._refresh_basis_sets()
+        self._cb_selection_changed()
+
+    def _cb_selection_changed(self):
+        self.ui_output.settext("")
+        basis = self._selected_basis_set()
+        if not basis:
+            return
+        selected_elem = self._selected_elements()
+        supported_elem = self._cb_supported_elements(basis)
+        elements = [e for e in selected_elem if e in supported_elem]
+        text = self.get_basis_set(basis, elements)
+        self.ui_output.settext(text)
+
+    def _cb_supported_elements(self, basis_set=None):
+        if basis_set is None:
+            basis_set = self._selected_basis_set()
+        elements = self.db.get_available_elements(basis_set)
+        self._restore_periodic_table()
+        for e in elements:
+            if e:
+                self.ui_elements[e]['fg'] = 'blue'
+        return elements
+
+    def _cb_saved_basis_add(self):
+        basis_text = self.ui_output.getvalue()
+        if basis_text:
+            elements = tuple(sorted(self._selected_elements()))
+            if not elements:
+                elements = ('*',)
+            self.saved_basis[elements] = basis_text
+            self.ui_saved_basis.setlist(sorted(self.saved_basis.keys()))
+        
+    def _cb_saved_basis_del(self):
+        item = self.ui_saved_basis.getvalue()
+        for i in item:
+            try:
+                del self.saved_basis[tuple(i)]
+            except KeyError:
+                pass
+        self.ui_saved_basis.setlist(sorted(self.saved_basis.keys()))
+        
+    # Helpers
+    def get_basis_set(self, basis_set, elements=()):
+        try:
+            basis = self.db.get_basis(basis_set, elements=elements)
+        except UnboundLocalError:
+            return ""
+        return '\n'.join([b.replace('****\n', '****\n-') for b in basis])
+
+    def _selected_basis_set(self):
+        try:
+            basis_set = self.ui_basis_sets.getvalue()[0]
+        except IndexError:
+            return
+        if basis_set != '--None--':
+            return basis_set
+
+    def _selected_elements(self):
+        return [name for name, var in self.var_elements.iteritems() if var.get()]
+
+    def _restore_periodic_table(self):
+        for wid in self.ui_elements.itervalues():
+            wid['fg'] = 'black'
+
+    def _refresh_basis_sets(self):
+        current = self._selected_basis_set()
+        elements = self._selected_elements()
+        basis_sets = self.db.get_available_basis_sets(elements=elements)
+        basis_sets_names = [b for (b, _) in basis_sets]
+        self.ui_basis_sets.setlist(basis_sets_names)
+        if current and current in basis_sets_names:
+            self.ui_basis_sets.setvalue([current])
+
+    def _reset_all(self):
+        for var in self.var_elements.itervalues():
+            var.set(0)
+        for wid in self.ui_elements.itervalues():
+            wid['fg'] = 'black'
+        self.ui_basis_sets.setlist(self.db_basissets)
+        self.ui_output.settext("")
+

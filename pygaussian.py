@@ -43,7 +43,6 @@ QM_FUNCTIONALS = {
                   'LC-wPBE', 'CAM-B3LYP', 'HISSbPBE', 'M11', 'N12SX', 'MN12SX')
 }
 QM_FUNCTIONALS_ALL = set(f for v in QM_FUNCTIONALS.values() for f in v)
-
 QM_BASIS_SETS = ('STO-3G', '3-21G', '6-21G', '4-31G', '6-31G', "6-31G(d')",
                  "6-31G(d',p')", '6-311G', 'D95V', 'D95', 'SHC', 'CEP-4G',
                  'CEP-31G', 'CEP-121G', 'LanL2MB', 'LanL2DZ', 'SDD', 'SDDAll',
