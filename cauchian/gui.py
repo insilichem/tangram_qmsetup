@@ -106,7 +106,12 @@ class CauchianDialog(ModelessDialog):
     buttons = ('Preview', 'Export', 'Import', 'Close')
     default = None
     help = 'https://www.insilichem.com'
-
+    special_keys = ['??', 'Alt_L', 'BackSpace', 'Caps_Lock', 'Control_L', 
+                    'Control_R', 'Delete', 'Down', 'End', 'F1', 'F2', 'F3',
+                    'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+                    'Home', 'Insert', 'Left', 'Menu', 'Next', 'Num_Lock', 
+                    'Pause', 'Prior', 'Return', 'Return', 'Right', 'Scroll_Lock',
+                    'Shift_L', 'Shift_R', 'space', 'Super_L', 'Super_R', 'Tab', 'Up']
     def __init__(self, *args, **kwarg):
         # GUI init
         self.title = 'Plume Cauchian'
