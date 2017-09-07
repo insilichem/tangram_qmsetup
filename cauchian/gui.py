@@ -373,6 +373,7 @@ class CauchianDialog(ModelessDialog):
         global ui
         ui = None
         ModelessDialog.Close(self)
+        chimera.extension.manager.deregisterInstance(self)
         self.destroy()
 
     # Below this line, implement all your custom methods for the GUI.
