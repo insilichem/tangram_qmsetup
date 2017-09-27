@@ -13,6 +13,7 @@ import chimera.tkgui
 from chimera.baseDialog import ModelessDialog
 from chimera.widgets import MoleculeScrolledListBox
 # Own
+from plumesuite.ui import PlumeBaseDialog
 from core import Controller, Model
 from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
                         QM_BASIS_SETS, QM_BASIS_SETS_EXT)
@@ -23,58 +24,6 @@ It should only 'draw' the window, and should NOT contain any
 business logic like parsing files or applying modifications
 to the opened molecules. That belongs to core.py.
 """
-
-STYLES = {
-    tk.Entry: {
-        'background': 'white',
-        'borderwidth': 1,
-        'highlightthickness': 0,
-        'insertwidth': 1,
-    },
-    tk.Button: {
-        'borderwidth': 1,
-        'highlightthickness': 0,
-    },
-    tk.Checkbutton: {
-        'highlightbackground': chimera.tkgui.app.cget('bg'),
-        'activebackground': chimera.tkgui.app.cget('bg'),
-    },
-    Pmw.OptionMenu: {
-        'menubutton_borderwidth': 1,
-        'menu_relief': 'flat',
-        'menu_activeborderwidth': 0,
-        'menu_activebackground': '#DDD',
-        'menu_borderwidth': 1,
-        'menu_background': 'white',
-        'hull_borderwidth': 0,
-    },
-    Pmw.ComboBox: {
-        'entry_borderwidth': 1,
-        'entry_highlightthickness': 0,
-        'entry_background': 'white',
-        'arrowbutton_borderwidth': 1,
-        'arrowbutton_relief': 'flat',
-        'arrowbutton_highlightthickness': 0,
-        'listbox_borderwidth': 1,
-        'listbox_background': 'white',
-        'listbox_relief': 'ridge',
-        'listbox_highlightthickness': 0,
-        'scrolledlist_hull_borderwidth': 0
-    },
-    Pmw.ScrolledListBox: {
-        'listbox_borderwidth': 1,
-        'listbox_background': 'white',
-        'listbox_relief': 'ridge',
-        'listbox_highlightthickness': 0,
-        'listbox_selectbackground': '#DDD',
-        'listbox_selectborderwidth': 0
-    },
-    MoleculeScrolledListBox: {
-        'listbox_borderwidth': 1,
-        'listbox_background': 'white',
-        'listbox_highlightthickness': 0,
-    }
-}
 
 # This is a Chimera thing. Do it, and deal with it.
 ui = None
@@ -94,7 +43,7 @@ def showUI(callback=None, *args, **kwargs):
         ui.addCallback(callback)
 
 
-class CauchianDialog(ModelessDialog):
+class CauchianDialog(PlumeBaseDialog):
 
     """
     To display a new dialog on the interface, you will normally inherit from
@@ -105,15 +54,14 @@ class CauchianDialog(ModelessDialog):
     """
 
     buttons = ('Preview', 'Export', 'Import', 'Close')
-    default = None
-    help = 'https://www.insilichem.com'
     special_keys = ['??', 'Alt_L', 'BackSpace', 'Caps_Lock', 'Control_L', 
                     'Control_R', 'Delete', 'Down', 'End', 'F1', 'F2', 'F3',
                     'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
                     'Home', 'Insert', 'Left', 'Menu', 'Next', 'Num_Lock', 
                     'Pause', 'Prior', 'Return', 'Return', 'Right', 'Scroll_Lock',
                     'Shift_L', 'Shift_R', 'space', 'Super_L', 'Super_R', 'Tab', 'Up']
-    def __init__(self, *args, **kwarg):
+    
+    def __init__(self, *args, **kwargs):
         # GUI init
         self.title = 'Plume Cauchian'
 
@@ -169,12 +117,8 @@ class CauchianDialog(ModelessDialog):
         self.ui_labels = {}
 
         # Fire up
-        ModelessDialog.__init__(self)
-        if not chimera.nogui:  # avoid useless errors during development
-            chimera.extension.manager.registerInstance(self)
-
-        # Fix styles
-        self._fix_styles(*self.buttonWidgets.values())
+        super(CauchianDialog, self).__init__(self, *args, **kwargs)
+        
 
     def _basis_sets_custom_build(self, *args):
         basis = self.var_qm_basis.get()
@@ -182,29 +126,11 @@ class CauchianDialog(ModelessDialog):
         if basis:
             self.var_qm_basis_custom.set('{}{}'.format(basis, ext if ext else ''))
 
-    def _initialPositionCheck(self, *args):
-        try:
-            ModelessDialog._initialPositionCheck(self, *args)
-        except Exception as e:
-            if not chimera.nogui:  # avoid useless errors during development
-                raise e
-
-    def _fix_styles(self, *widgets):
-        for widget in widgets:
-            try:
-                widget.configure(**STYLES[widget.__class__])
-            except Exception as e:
-                print('Error fixing styles:', type(e), str(e))
-
-    def fillInUI(self, parent):
+    def fill_in_ui(self, parent):
         """
         This is the main part of the interface. With this method you code
         the whole dialog, buttons, textareas and everything.
         """
-        # Create main window
-        self.canvas = tk.Frame(parent)
-        self.canvas.pack(expand=True, fill='both')
-
         # Select molecules
         self.ui_molecule_frame = tk.LabelFrame(self.canvas, text='Select molecules')
         self.ui_molecules = MoleculeScrolledListBox(self.ui_molecule_frame)
@@ -366,76 +292,6 @@ class CauchianDialog(ModelessDialog):
         """
         pass
 
-    def Close(self):
-        """
-        Default! Triggered action if you click on the Close button
-        """
-        global ui
-        ui = None
-        ModelessDialog.Close(self)
-        chimera.extension.manager.deregisterInstance(self)
-        self.destroy()
-
-    # Below this line, implement all your custom methods for the GUI.
-    def auto_grid(self, parent, grid, resize_columns=(1,), label_sep=':', **options):
-        """
-        Auto grid an ordered matrix of Tkinter widgets.
-
-        Parameters
-        ----------
-        parent : tk.Widget
-            The widget that will host the widgets on the grid
-        grid : list of list of tk.Widget
-            A row x columns matrix of widgets. It is built on lists.
-            Each list in the toplevel list represents a row. Each row
-            contains widgets, tuples or strings, in column order.  
-            If it's a widget, it will be grid at the row i (index of first level
-            list) and column j (index of second level list).
-            If a tuple of widgets is found instead of a naked widget,
-            they will be packed in a frame, and grid'ed as a single cell.
-            If it's a string, a Label will be created with that text, and grid'ed. 
-
-            For example:
-            >>> grid = [['A custom label', widget_0_1, widget_0_2], # first row
-            >>>         [widget_1_0, widget_1_1, widget_1_2],       # second row
-            >>>         [widget_2_0, widget_2_1, (widgets @ 2_2)]]  # third row
-
-        """
-        for column in resize_columns:
-            parent.columnconfigure(column, weight=int(100/len(resize_columns)))
-        _kwargs = {'padx': 2, 'pady': 2, 'ipadx': 2, 'ipady': 2}
-        _kwargs.update(options)
-        for i, row in enumerate(grid):
-            for j, item in enumerate(row):
-                kwargs = _kwargs.copy()
-                sticky = 'ew'
-                if isinstance(item, tuple):
-                    frame = tk.Frame(parent)
-                    self.auto_pack(frame, item, side='left', padx=2, pady=2, expand=True, fill='x',
-                                   label_sep=label_sep)
-                    item = frame
-                elif isinstance(item, basestring):
-                    sticky = 'e'
-                    label = self.ui_labels[item] = tk.Label(parent, text=item + label_sep if item else '')
-                    item = label 
-                elif isinstance(item, tk.Checkbutton):
-                    sticky = 'w'
-                if 'sticky' not in kwargs:
-                    kwargs['sticky'] = sticky
-                item.grid(in_=parent, row=i, column=j, **kwargs)
-                self._fix_styles(item)
-
-    def auto_pack(self, parent, widgets, label_sep=':', **kwargs):
-        for widget in widgets:
-            options = kwargs.copy()
-            if isinstance(widget, basestring):
-                label = self.ui_labels[widget] = tk.Label(parent, text=widget + label_sep if widget else '')
-                widget = label
-            if isinstance(widget, (tk.Button, tk.Label)):
-                options['expand'] = False
-            widget.pack(in_=parent, **options)
-            self._fix_styles(widget)
-
     def _enter_custombasisset(self):
         if self._basis_set_dialog is None:
             self._basis_set_dialog = BasisSetDialog(self.var_qm_basis_extra, parent=self)
@@ -460,7 +316,7 @@ ELEMENTS = [
 ALL_ELEMENTS = [element for row in ELEMENTS for element in row if element]
 
 
-class BasisSetDialog(ModelessDialog):
+class BasisSetDialog(PlumeBaseDialog):
 
     """
     A Tkinter GUI to EMSL Basis Set Exchange database. Requires ebsel
@@ -468,10 +324,8 @@ class BasisSetDialog(ModelessDialog):
     """
 
     buttons = ('OK', 'Close')
-    default = None
-    help = 'https://www.insilichem.com'
 
-    def __init__(self, saved_basis, parent=None, *args, **kwarg):
+    def __init__(self, saved_basis, parent=None, *args, **kwargs):
         try:
             from ebsel import EMSL_local
         except ImportError:
@@ -490,45 +344,18 @@ class BasisSetDialog(ModelessDialog):
         self.db_basissets = sorted([b for (b, d) in self.db.get_available_basis_sets()])
 
         # Fire up
-        ModelessDialog.__init__(self)
-        if not chimera.nogui:  # avoid useless errors during development
-            chimera.extension.manager.registerInstance(self)
-
-        # Fix styles
-        self._fix_styles(*self.buttonWidgets.values())
-        
-    def _initialPositionCheck(self, *args):
-        try:
-            ModelessDialog._initialPositionCheck(self, *args)
-        except Exception as e:
-            if not chimera.nogui:  # avoid useless errors during development
-                raise e
-
-    def _fix_styles(self, *widgets):
-        for widget in widgets:
-            try:
-                widget.configure(**STYLES[widget.__class__])
-            except Exception as e:
-                print('Error fixing styles:', type(e), str(e))
+        PlumeBaseDialog.__init__(self, *args, **kwargs)
 
     def OK(self):
         self._saved_basis.clear()
         self._saved_basis.update(self.saved_basis)
         self.Close()
 
-    def Close(self):
-        self.parent._basis_set_dialog = None
-        ModelessDialog.Close(self)
-        self.destroy()
-
-    def fillInUI(self, parent):
+    def fill_in_ui(self, parent):
         """
         This is the main part of the interface. With this method you code
         the whole dialog, buttons, textareas and everything.
         """
-        # Create main window
-        self.canvas = tk.Frame(parent)
-        self.canvas.pack(expand=True, fill='both')
         self.canvas.columnconfigure(1, weight=1)
         self.ui_basis_set_frame = tk.LabelFrame(self.canvas, text='Choose a basis set')
         self.ui_basis_set_frame.grid(rowspan=2, row=0, column=0, sticky='news', pady=5, padx=5)
@@ -572,10 +399,6 @@ class BasisSetDialog(ModelessDialog):
         self.ui_saved_basis.grid(row=0, column=0, columnspan=2, sticky='news', pady=2, padx=2)
         self.ui_saved_basis_add.grid(row=1, column=0, sticky='we', pady=2, padx=2)
         self.ui_saved_basis_del.grid(row=1, column=1, sticky='we', pady=2, padx=2)
-
-        widgets =  [self.ui_basis_sets, self.ui_basis_set_restore, self.ui_output, 
-                    self.ui_saved_basis, self.ui_saved_basis_add, self.ui_saved_basis_del]
-        self._fix_styles(*widgets + self.ui_elements.values())
 
     # Callbacks
     def _cb_basissets_changed(self):
