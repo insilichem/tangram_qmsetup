@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
-# Get used to importing this in your Py27 projects!
+
 from __future__ import print_function, division
 # Python stdlib
 import Tkinter as tk
@@ -18,24 +18,12 @@ from core import Controller, Model
 from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
                         QM_BASIS_SETS, QM_BASIS_SETS_EXT)
 
-"""
-The gui.py module contains the interface code, and only that. 
-It should only 'draw' the window, and should NOT contain any
-business logic like parsing files or applying modifications
-to the opened molecules. That belongs to core.py.
-"""
 
-# This is a Chimera thing. Do it, and deal with it.
-ui = None
+
 def showUI(callback=None, *args, **kwargs):
-    """
-    Requested by Chimera way-of-doing-things
-    """
     if chimera.nogui:
         tk.Tk().withdraw()
-    global ui
-    if not ui:  # Edit this to reflect the name of the class!
-        ui = CauchianDialog(*args, **kwargs)
+    ui = CauchianDialog(*args, **kwargs)
     model = Model()
     controller = Controller(gui=ui, model=model)
     ui.enter()
@@ -44,14 +32,6 @@ def showUI(callback=None, *args, **kwargs):
 
 
 class CauchianDialog(PlumeBaseDialog):
-
-    """
-    To display a new dialog on the interface, you will normally inherit from
-    ModelessDialog class of chimera.baseDialog module. Being modeless means
-    you can have this dialog open while using other parts of the interface.
-    If you don't want this behaviour and instead you want your extension to 
-    claim exclusive usage, use ModalDialog.
-    """
 
     buttons = ('Preview', 'Export', 'Import', 'Close')
     special_keys = ['??', 'Alt_L', 'BackSpace', 'Caps_Lock', 'Control_L', 
@@ -127,10 +107,6 @@ class CauchianDialog(PlumeBaseDialog):
             self.var_qm_basis_custom.set('{}{}'.format(basis, ext if ext else ''))
 
     def fill_in_ui(self, parent):
-        """
-        This is the main part of the interface. With this method you code
-        the whole dialog, buttons, textareas and everything.
-        """
         # Select molecules
         self.ui_molecule_frame = tk.LabelFrame(self.canvas, text='Select molecules')
         self.ui_molecules = MoleculeScrolledListBox(self.ui_molecule_frame)
@@ -278,18 +254,12 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_preview_frame.grid(row=100, columnspan=2, sticky='news', padx=5, pady=5)
 
     def Export(self):
-        """
-        Default! Triggered action if you click on an Apply button
-        """
         pass
 
     def Import(self):
         pass
 
     def Preview(self):
-        """
-        Default! Triggered action if you click on an Apply button
-        """
         pass
 
     def _enter_custombasisset(self):
@@ -352,10 +322,6 @@ class BasisSetDialog(PlumeBaseDialog):
         self.Close()
 
     def fill_in_ui(self, parent):
-        """
-        This is the main part of the interface. With this method you code
-        the whole dialog, buttons, textareas and everything.
-        """
         self.canvas.columnconfigure(1, weight=1)
         self.ui_basis_set_frame = tk.LabelFrame(self.canvas, text='Choose a basis set')
         self.ui_basis_set_frame.grid(rowspan=2, row=0, column=0, sticky='news', pady=5, padx=5)
