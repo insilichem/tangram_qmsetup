@@ -7,6 +7,8 @@ from __future__ import print_function, division
 import Tkinter as tk
 import Pmw
 from multiprocessing import cpu_count
+from random import choice
+from string import ascii_letters
 # Chimera stuff
 import chimera
 import chimera.tkgui
@@ -24,7 +26,7 @@ def showUI(callback=None, *args, **kwargs):
     if chimera.nogui:
         tk.Tk().withdraw()
     ui = CauchianDialog(*args, **kwargs)
-    model = Model()
+    model = Model(gui=ui)
     controller = Controller(gui=ui, model=model)
     ui.enter()
     if callback:
@@ -34,19 +36,19 @@ def showUI(callback=None, *args, **kwargs):
 class CauchianDialog(PlumeBaseDialog):
 
     buttons = ('Preview', 'Export', 'Import', 'Close')
-    special_keys = ['??', 'Alt_L', 'BackSpace', 'Caps_Lock', 'Control_L', 
+    special_keys = ['??', 'Alt_L', 'BackSpace', 'Caps_Lock', 'Control_L',
                     'Control_R', 'Delete', 'Down', 'End', 'F1', 'F2', 'F3',
                     'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
-                    'Home', 'Insert', 'Left', 'Menu', 'Next', 'Num_Lock', 
+                    'Home', 'Insert', 'Left', 'Menu', 'Next', 'Num_Lock',
                     'Pause', 'Prior', 'Return', 'Return', 'Right', 'Scroll_Lock',
                     'Shift_L', 'Shift_R', 'space', 'Super_L', 'Super_R', 'Tab', 'Up']
-    
+
     def __init__(self, *args, **kwargs):
         # GUI init
         self.title = 'Plume Cauchian'
 
         # Molecule variables
-        self.var_molecules_conformations = tk.IntVar()
+        self.var_molecule_replicas = tk.IntVar()
 
         # Job variables
         self.var_job = tk.StringVar()
@@ -62,9 +64,7 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_qm_basis = tk.StringVar()
         self.var_qm_basis_ext = tk.StringVar()
         self.var_qm_basis_custom = tk.StringVar()
-        self.var_qm_basis_extra = {}
-        self.var_qm_basis.trace('w', self._basis_sets_custom_build)
-        self.var_qm_basis_ext.trace('w', self._basis_sets_custom_build)
+        self._qm_basis_extra = {}
         self.var_qm_keywords = tk.StringVar()
 
         # MM variables
@@ -98,49 +98,39 @@ class CauchianDialog(PlumeBaseDialog):
 
         # Fire up
         super(CauchianDialog, self).__init__(self, *args, **kwargs)
-        
-
-    def _basis_sets_custom_build(self, *args):
-        basis = self.var_qm_basis.get()
-        ext = self.var_qm_basis_ext.get()
-        if basis:
-            self.var_qm_basis_custom.set('{}{}'.format(basis, ext if ext else ''))
 
     def fill_in_ui(self, parent):
         # Select molecules
         self.ui_molecule_frame = tk.LabelFrame(self.canvas, text='Select molecules')
         self.ui_molecules = MoleculeScrolledListBox(self.ui_molecule_frame)
-        self.ui_molecules_master = tk.Button(self.canvas, text='Set model')
-        self.ui_molecules_slave = tk.Button(self.canvas, text='Set replica(s)')
-        self.ui_molecules_conformations = tk.Checkbutton(self.canvas, text='Process frames',
-                                                         variable=self.var_molecules_conformations)
-        self.ui_molecule_frame.columnconfigure(0, weight=1)
-        self.ui_molecule_frame.rowconfigure(0, weight=1)
+        self.ui_molecules_replicas = MoleculeScrolledListBox(self.ui_molecule_frame)
+        self.ui_molecules_replica_chk = tk.Checkbutton(self.canvas, text='With replicas',
+                                                         variable=self.var_molecule_replicas)
+
+        self.ui_molecule_frame.columnconfigure(0, weight=3)
+        self.ui_molecule_frame.columnconfigure(1, weight=1)
+        self.ui_molecule_frame.rowconfigure(1, weight=1)
         mol_options = {'padx': 5, 'pady': 5}
-        self.ui_molecules.grid(in_=self.ui_molecule_frame, row=0, column=0, rowspan=4, sticky='news', **mol_options)
-        self.ui_molecules_master.grid(in_=self.ui_molecule_frame, row=1, column=1, sticky='we', **mol_options)
-        self.ui_molecules_slave.grid(in_=self.ui_molecule_frame, row=2, column=1, sticky='we', **mol_options)
-        self.ui_molecules_conformations.grid(in_=self.ui_molecule_frame, row=3, column=1, sticky='we', **mol_options)
-        self._fix_styles(self.ui_molecules, self.ui_molecules_master, 
-                         self.ui_molecules_slave, self.ui_molecules_conformations)
+        self.ui_molecules.grid(in_=self.ui_molecule_frame, row=0, column=0,
+                rowspan=2, sticky='news', **mol_options)
+        self.ui_molecules_replica_chk.grid(in_=self.ui_molecule_frame, row=0, column=1,
+                sticky='we', **mol_options)
+        self.ui_molecules_replicas.grid(in_=self.ui_molecule_frame, row=1, column=1,
+                sticky='news', **mol_options)
 
         # Modelization
         self.ui_model_frame = tk.LabelFrame(self.canvas, text='Modelization')
-        self.ui_job = Pmw.OptionMenu(self.canvas,
-                                              menubutton_textvariable=self.var_job,
-                                              items=JOB_TYPES)
-        self.ui_job_options = Pmw.OptionMenu(self.canvas,
-                                              menubutton_textvariable=self.var_job_options,
-                                              items=['No', 'Min', 'TS'])
+        self.ui_job = Pmw.OptionMenu(self.canvas, items=JOB_TYPES, initialitem=0,
+                                     menubutton_textvariable=self.var_job)
+        self.ui_job_options = Pmw.OptionMenu(self.canvas, items=['No', 'Min', 'TS'], initialitem=0,
+                                              menubutton_textvariable=self.var_job_options)
         self.ui_frequencies = tk.Checkbutton(self.canvas, variable=self.var_frequencies,
                                              text='Get frequencies')
-        self.ui_calculation = Pmw.OptionMenu(self.canvas,
-                                             menubutton_textvariable=self.var_calculation,
-                                             items=['QM', 'ONIOM'])
+        self.ui_calculation = Pmw.OptionMenu(self.canvas, items=['QM', 'ONIOM'], initialitem=0,
+                                             menubutton_textvariable=self.var_calculation)
         self.ui_layers = tk.Button(self.canvas, text='Define layers')
-        self.ui_solvent = Pmw.OptionMenu(self.canvas,
-                                         menubutton_textvariable=self.var_solvent,
-                                         items=['Implicit', 'Explicit'])
+        self.ui_solvent = Pmw.OptionMenu(self.canvas, items=['Implicit', 'Explicit'], initialitem=0,
+                                         menubutton_textvariable=self.var_solvent)
         self.ui_solvent_cfg = tk.Button(self.canvas, text='Configure')
 
         model_grid = [['Model', self.ui_calculation, self.ui_layers],
@@ -151,51 +141,49 @@ class CauchianDialog(PlumeBaseDialog):
 
         # QM configuration
         self.ui_qm_frame = tk.LabelFrame(self.canvas, text='QM Settings')
-        self.ui_qm_methods = Pmw.OptionMenu(self.canvas,
-                                            menubutton_textvariable=self.var_qm_method,
-                                            items=QM_METHODS)
-        self.ui_qm_functional_type = Pmw.OptionMenu(self.canvas,
-                                                    menubutton_textvariable=self.var_qm_functional_type,
-                                                    items=sorted(QM_FUNCTIONALS.keys()))
-        self.ui_qm_functionals = Pmw.OptionMenu(self.canvas,
-                                                menubutton_textvariable=self.var_qm_functional,
-                                                items=QM_FUNCTIONALS['Pure'])
-        self.ui_qm_basis = Pmw.OptionMenu(self.canvas,
-                                          menubutton_textvariable=self.var_qm_basis,
-                                          items=QM_BASIS_SETS)
-        self.ui_qm_basis_ext = Pmw.OptionMenu(self.canvas,
-                                              menubutton_textvariable=self.var_qm_basis_ext,
-                                              items=QM_BASIS_SETS_EXT)
-        self.ui_qm_basis_per_atom = tk.Button(self.canvas, text='Per-element', command=self._enter_custombasisset)
+        self.ui_qm_methods = Pmw.OptionMenu(self.canvas, items=QM_METHODS, initialitem=6,
+                                            menubutton_textvariable=self.var_qm_method)
+        self.ui_qm_functional_type = Pmw.OptionMenu(self.canvas, initialitem=0,
+                                                    items=sorted(QM_FUNCTIONALS.keys()),
+                                                    menubutton_textvariable=self.var_qm_functional_type)
+        self.ui_qm_functionals = Pmw.OptionMenu(self.canvas, initialitem=0,
+                                                items=QM_FUNCTIONALS['Pure'],
+                                                menubutton_textvariable=self.var_qm_functional)
+        self.ui_qm_basis = Pmw.OptionMenu(self.canvas, items=QM_BASIS_SETS, initialitem=0,
+                                          menubutton_textvariable=self.var_qm_basis)
+        self.ui_qm_basis_ext = Pmw.OptionMenu(self.canvas, items=QM_BASIS_SETS_EXT, initialitem=0,
+                                              menubutton_textvariable=self.var_qm_basis_ext)
+        self.ui_qm_basis_per_atom = tk.Button(self.canvas, text='Per-element')
         self.ui_qm_basis_custom = tk.Entry(self.canvas, textvariable=self.var_qm_basis_custom)
         self.ui_qm_keywords = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_qm_keywords,
                                            history=True, unique=True, dropdown=True)
 
         qm_grid = [['Method', (self.ui_qm_methods, 'Functional', self.ui_qm_functional_type, self.ui_qm_functionals)],
                    ['Basis set', (self.ui_qm_basis, self.ui_qm_basis_ext, self.ui_qm_basis_custom, self.ui_qm_basis_per_atom)],
-                   ['Keywords', self.ui_qm_keywords]]
+                   ['Extra keywords', self.ui_qm_keywords]]
         self.auto_grid(self.ui_qm_frame, qm_grid)
 
         # MM Configuration
         self.ui_mm_frame = tk.LabelFrame(self.canvas, text='MM Settings')
-        self.ui_mm_forcefields = Pmw.OptionMenu(self.canvas,
-                                                menubutton_textvariable=self.var_mm_forcefield,
-                                                items=MM_FORCEFIELDS['General'])
-        self.ui_mm_water_forcefield = Pmw.OptionMenu(self.canvas,
-                                                menubutton_textvariable=self.var_mm_water_forcefield,
-                                                items=MM_FORCEFIELDS['Water'])
+        self.ui_mm_forcefields = Pmw.OptionMenu(self.canvas, initialitem=0,
+                                                items=MM_FORCEFIELDS['General'],
+                                                menubutton_textvariable=self.var_mm_forcefield)
+        self.ui_mm_water_forcefield = Pmw.OptionMenu(self.canvas, initialitem=0,
+                                                items=MM_FORCEFIELDS['Water'],
+                                                menubutton_textvariable=self.var_mm_water_forcefield)
         self.ui_mm_frcmod = tk.Entry(self.canvas, textvariable=self.var_mm_frcmod)
+        self.ui_mm_frcmod_btn = tk.Button(self.canvas, text='...')
 
         mm_grid = [['Forcefield', self.ui_mm_forcefields],
                    ['Waters', self.ui_mm_water_forcefield],
-                   ['Frcmod', self.ui_mm_frcmod]]
+                   ['Frcmod', (self.ui_mm_frcmod, self.ui_mm_frcmod_btn)]]
         self.auto_grid(self.ui_mm_frame, mm_grid)
 
         # Flexibility & Restraints
         self.ui_flex_frame = tk.LabelFrame(self.canvas, text='Flexibility & Restraints')
-        self.ui_flex_policy = Pmw.OptionMenu(self.canvas,
-                                             menubutton_textvariable=self.var_flex_policy,
-                                             items=['flexible', 'fixed'])
+        self.ui_flex_policy = Pmw.OptionMenu(self.canvas, items=['flexible', 'fixed'],
+                                             initialitem=0,
+                                             menubutton_textvariable=self.var_flex_policy)
         self.ui_flex_lbl = tk.Label(self.canvas, textvariable=self.var_flex_lbl)
         self.ui_flex_btn = tk.Button(self.canvas, text='Configure')
         self.ui_redundant = tk.Checkbutton(self.canvas, text='Also, apply some restraints',
@@ -205,7 +193,7 @@ class CauchianDialog(PlumeBaseDialog):
         flex_grid = [['All atoms are', self.ui_flex_policy],
                      ['Except', (self.ui_flex_lbl, self.ui_flex_btn)],
                      ['Configure restraints', self.ui_redundant_btn]]
-        self.auto_grid(self.ui_flex_frame, flex_grid ,label_sep='...')
+        self.auto_grid(self.ui_flex_frame, flex_grid, label_sep='...')
 
         # Charges & multiplicity
         self.ui_charges_frame = tk.LabelFrame(self.canvas, text='Charges & Multiplicity')
@@ -224,16 +212,17 @@ class CauchianDialog(PlumeBaseDialog):
         # Hardware
         self.ui_hw_frame = tk.LabelFrame(self.canvas, text='Output')
         self.ui_title = tk.Entry(self.canvas, textvariable=self.var_title)
-        self.ui_title_btn = tk.Button(self.canvas, text='Random')
+        self.ui_title_btn = tk.Button(self.canvas, text='Random',
+            command=lambda:self.var_title.set(''.join(choice(ascii_letters) for i in range(8))))
         self.ui_checkpoint = tk.Checkbutton(self.canvas, variable=self.var_checkpoint, text='Check:')
         self.ui_checkpoint_fld = tk.Entry(self.canvas, textvariable=self.var_checkpoint_path)
         self.ui_checkpoint_btn = tk.Button(self.canvas, text='Browse')
         self.ui_nproc = tk.Entry(self.canvas, textvariable=self.var_nproc, width=5)
-        self.ui_nproc_btn = tk.Button(self.canvas, text='Get', command=lambda:self.var_nproc.set(cpu_count()))
+        self.ui_nproc_btn = tk.Button(self.canvas, text='Get',
+            command=lambda:self.var_nproc.set(cpu_count()))
         self.ui_memory = tk.Entry(self.canvas, textvariable=self.var_memory, width=5)
-        self.ui_memory_units = Pmw.OptionMenu(self.canvas,
-                                              menubutton_textvariable=self.var_memory_units,
-                                              items=MEM_UNITS)
+        self.ui_memory_units = Pmw.OptionMenu(self.canvas, items=MEM_UNITS, initialitem=2,
+                                              menubutton_textvariable=self.var_memory_units)
         hw_grid = [['Job title', self.ui_title, self.ui_title_btn, '# CPUs', self.ui_nproc, self.ui_nproc_btn],
                    [self.ui_checkpoint, self.ui_checkpoint_fld, self.ui_checkpoint_btn, 'Memory', self.ui_memory, self.ui_memory_units]]
         self.auto_grid(self.ui_hw_frame, hw_grid, sticky='news')
@@ -262,10 +251,6 @@ class CauchianDialog(PlumeBaseDialog):
     def Preview(self):
         pass
 
-    def _enter_custombasisset(self):
-        if self._basis_set_dialog is None:
-            self._basis_set_dialog = BasisSetDialog(self.var_qm_basis_extra, parent=self)
-        self._basis_set_dialog.enter()
 
 ###############################################
 #
@@ -403,7 +388,7 @@ class BasisSetDialog(PlumeBaseDialog):
                 elements = ('*',)
             self.saved_basis[elements] = basis_text
             self.ui_saved_basis.setlist(sorted(self.saved_basis.keys()))
-        
+
     def _cb_saved_basis_del(self):
         item = self.ui_saved_basis.getvalue()
         for i in item:
@@ -412,7 +397,7 @@ class BasisSetDialog(PlumeBaseDialog):
             except KeyError:
                 pass
         self.ui_saved_basis.setlist(sorted(self.saved_basis.keys()))
-        
+
     # Helpers
     def get_basis_set(self, basis_set, elements=()):
         try:
