@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+"""
+Object-oriented abstractions for GAUSSIAN input files
+"""
 
 from __future__ import print_function, division
 # Python stdlib
@@ -8,16 +11,13 @@ from string import ascii_letters
 import sys
 import os
 from collections import namedtuple
+from datetime import datetime
 # Chimera stuff
 # Additional 3rd parties
 # Own
 
 if sys.version_info.major == 3:
     basestring = str
-
-"""
-An object-oriented abstraction of a GAUSSIAN input file.
-"""
 
 # QM_BASIS_SETS_EXT = ['d,f-Diffuse (+)', 'p,d,f-Diffuse (++)', 'd,f-Polarization (*)', 'p,d,f-Polarization (**)']
 MM_FORCEFIELDS = {
@@ -27,11 +27,30 @@ MM_FORCEFIELDS = {
 MEM_UNITS = ('KB', 'MB', 'GB', 'TB', 'KW', 'MW', 'GW', 'TW')
 JOB_TYPES = ('SP', 'Opt', 'IRC', 'IRCMax', 'Scan', 'Freq', 'Polar', 'ADMP',
              'Force', 'Stable', 'Volume')
+JOB_OPTIONS = {
+    'SP': (),
+    'Opt': ('Min', 'TS'),
+    'IRC': (),
+    'IRCMax': (),
+    'Scan': (),
+    'Freq': ('Raman', 'NRaman', 'NNRaman', 'NoRaman', 'VCD', 'ROA'),
+    'Polar': (),
+    'ADMP': (),
+    'Force': (),
+    'Stable': (),
+    'Volume': ()
+}
 QM_METHODS = ('AM1', 'PM3', 'PM3MM', 'PM6', 'PDDG', 'HF', 'DFT', 'CASSCF', 'MP2',
               'MP3', 'MP4(SDQ)', 'MP4(SDTQ)', 'MP5', 'QCISD', 'CCD', 'CCSD',
               'QCISD(T)', 'QCISD(TQ)', 'BD', 'EPT', 'CBS', 'W1', 'CIS', 'TD',
               'EOM', 'ZINDO', 'DFTB', 'CI', 'GVB', 'G1', 'G2', 'G2MP2', 'G3',
               'G3MP2', 'G3B3', 'G3MP2B3', 'G4', 'G4MP2')
+QM_BASIS_SETS = ('STO-3G', '3-21G', '6-21G', '4-31G', '6-31G', "6-31G(d')",
+                 "6-31G(d',p')", '6-311G', 'D95V', 'D95', 'SHC', 'CEP-4G',
+                 'CEP-31G', 'CEP-121G', 'LanL2MB', 'LanL2DZ', 'SDD', 'SDDAll',
+                 'cc-pVDZ', 'cc-pVTZ', 'cc-pVQZ', 'cc-pV5Z', 'cc-pV6Z')
+QM_BASIS_SETS_EXT = ('', '+', '++', '*', '**')
+QM_BASIS_SETS_WITH_ARGS = ('SDD', 'SHC')
 QM_FUNCTIONALS = {
     'Pure':      ('VSXC', 'HCTH', 'HCTH93', 'HCTH147', 'HCTH407', 'tHCTH',
                   'M06L', 'B97D', 'B97D3', 'SOGGA11', 'M11L', 'N12', 'MN12L'),
@@ -43,40 +62,108 @@ QM_FUNCTIONALS = {
                   'LC-wPBE', 'CAM-B3LYP', 'HISSbPBE', 'M11', 'N12SX', 'MN12SX')
 }
 QM_FUNCTIONALS_ALL = set(f for v in QM_FUNCTIONALS.values() for f in v)
-QM_BASIS_SETS = ('STO-3G', '3-21G', '6-21G', '4-31G', '6-31G', "6-31G(d')",
-                 "6-31G(d',p')", '6-311G', 'D95V', 'D95', 'SHC', 'CEP-4G',
-                 'CEP-31G', 'CEP-121G', 'LanL2MB', 'LanL2DZ', 'SDD', 'SDDAll',
-                 'cc-pVDZ', 'cc-pVTZ', 'cc-pVQZ', 'cc-pV5Z', 'cc-pV6Z')
-QM_BASIS_SETS_EXT = ('', '+', '++', '*', '**')
-QM_BASIS_SETS_WITH_ARGS = ('SDD', 'SHC')
-
-CustomBasisSet = namedtuple('CustomBasisSet', ['basis_set', 'elements', 'extra'])
 
 
 class GaussianInputFile(object):
+
+    """
+    Object-oriented abstraction of a Gaussian input file.
+
+    Represents an input file, section by section. Almost everything
+    can be set directly from the class initialization, but some
+    parameters will need manual assignment with special methods.
+
+    Implemented sections are:
+
+    - Link 0 (% commands)
+    - Route (# lines)
+    - Title
+    - Molecule specification (see `pygaussian.GaussianAtom`)
+    - Restraints (ModRedundant)
+    - Extra basis sets
+
+    It also offers some support for QM/MM jobs.
+
+    More info about Gaussian input formats can be consulted
+    in http://gaussian.com/input/.
+    """
 
     def __init__(self, title='Untitled job', *args, **kwargs):
         self.title = title
         self._route = {}
         self._link = {}
         self._job = None
+        self._charge = None
+        self._multiplicity = None
         self._qm_method = None
         self._qm_functional = None
         self._qm_basis_set = None
-        self._qm_basis_sets_extra = {}
-        self._restraints = []
+        self._qm_basis_sets_extra = []
         self._mm_forcefield = None
         self._mm_forcefield_extra = None
+        self._atoms = []
+        self._restraints = []
 
+        # Set and verify
+        for k, v in kwargs.items():
+            if hasattr(self, k) or isinstance(getattr(type(self), k, None), property):
+                try:
+                    setattr(self, k, v)
+                except (TypeError, ValueError) as e:
+                    print('! Could not set {} with value'
+                          ' {} because {}'.format(k, v, e))
+            else:
+                print('! Keyword {} not recognized'.format(k))
+
+    def __str__(self):
+        return '\n'.join(self.build(joined=False)[1:])
+
+    def build(self, joined=True):
+        sections = [self.timestamp]
+        # Link 0
+        link = self.link
+        if link:
+            sections.append(link)
+        # Route
+        sections.append(self.route)
+        sections.append('')
+        # Title
+        sections.append(self.title)
+        sections.append('')
+        # Charge, spin and atoms
+        sections.append(self.system)
+        sections.append('')
+        # Variables and configuration
+        restraints = self.restraints
+        if restraints:
+            sections.append(restraints)
+            sections.append('')
+        qm_basis_set_extra = self.qm_basis_set_extra
+        if qm_basis_set_extra:
+            sections.append(qm_basis_set_extra)
+            sections.append('')
+        sections.append('')
+        sections.append('')
+        if joined:
+            return '\n'.join(sections)
+        return sections
+    
+    @property
+    def timestamp(self):
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        return '! Generated by pygaussian at ' + now
+    
     # Link 0 section
     @property
     def link(self):
         s = []
-        for keyword, options in self._route.items():
+        for keyword, options in self._link.items():
             if not options:
                 s.append('%' + keyword)
-            else:
+            elif isinstance(options, (tuple, list)):
                 s.append('%{}={}'.format(keyword, ','.join(options)))
+            else:
+                s.append('%{}={}'.format(keyword, options))
         return '\n'.join(s)
 
     def add_link_option(self, keyword, *options):
@@ -98,8 +185,8 @@ class GaussianInputFile(object):
 
     @memory.setter
     def memory(self, value):
-        mem_units = 'MB'
-        if isinstance(value, tuple):
+        mem_units = 'GB'
+        if isinstance(value, (list, tuple)):
             if len(value) == 1:
                 value = value
             elif len(value) == 2:
@@ -127,7 +214,6 @@ class GaussianInputFile(object):
     @property
     def route(self):
         s = ['#p', self.modeling]
-
         for keyword, options in self._route.items():
             if not options:
                 s.append(keyword)
@@ -145,7 +231,13 @@ class GaussianInputFile(object):
         method = self.qm_method
         if method == 'DFT':
             method = self.qm_functional
+        if not method:
+            raise ValueError('Method must be set with `qm_method`. If '
+                             'using DFT, `qm_functional` is also needed.')
         basis = 'gen' if self._qm_basis_sets_extra else self.qm_basis_set
+        if not basis:
+            raise ValueError('Basis set must be set with `qm_basis_set` '
+                             'or `qm_basis_sets_extra`')
         forcefield = self.mm_forcefield
         if forcefield:
             if basis == 'gen':  # QMMM jobs usually specify ECP too
@@ -158,7 +250,10 @@ class GaussianInputFile(object):
     # Job type
     @property
     def job(self):
-        return self._job
+        job = self._job
+        if job is None:
+            raise ValueError('Job is not set!')
+        return job
 
     @job.setter
     def job(self, value):
@@ -205,7 +300,8 @@ class GaussianInputFile(object):
     @qm_method.setter
     def qm_method(self, value):
         if value not in QM_METHODS:
-            raise ValueError('Method must be either of {}'.format(','.join(QM_METHODS)))
+            raise ValueError('Method must be either of: '
+                             '{}'.format(', '.join(QM_METHODS)))
         self._qm_method = value
 
     @property
@@ -218,6 +314,7 @@ class GaussianInputFile(object):
             raise ValueError('Funtionals can only be set if method == DFT')
         if value not in QM_FUNCTIONALS_ALL:
             raise ValueError('functional {} not recognized'.format(value))
+        self._qm_functional = value
 
     @property
     def qm_basis_set(self):
@@ -228,8 +325,13 @@ class GaussianInputFile(object):
     @qm_basis_set.setter
     def qm_basis_set(self, value):
         if value.rstrip('+*') not in QM_BASIS_SETS:
-            raise ValueError('Basis set {} not recognized'.format(value))
+            raise ValueError('Basis set {} not recognized. '
+                             'Try with one of: {}'.format(value, ', '.join(QM_BASIS_SETS)))
         self._qm_basis_set = value
+
+    @property
+    def qm_basis_set_extra(self):
+        return self._qm_basis_sets_extra
 
     def add_extra_basis_set(self, basis_set, elements, extra_args=None, position=None):
         basis_set = CustomBasisSet(basis_set, elements, extra_args=extra_args,
@@ -247,12 +349,41 @@ class GaussianInputFile(object):
             raise ValueError('Forcefield {} not recognized'.format(value))
         self._mm_forcefield = value
 
-    def mm_forcefield_extra(self, value):
+
+    def add_mm_forcefield(self, value):
         if value.endswith('.frcmod') and os.path.isfile(value):
-            value = import_from_frcmod(value)
+            self._mm_forcefield_extra = import_from_frcmod(value)
         else:
             raise ValueError('Supply a .frcmod file to load new parameters')
-        self._mm_forcefield_extra = value
+
+    # System
+    @property
+    def system(self):
+        return '\n'.join(['{} {}'.format(self.charge, self.spin)] + 
+                         map(str, self.atoms))
+
+    @property 
+    def atoms(self):
+        if not self._atoms:
+            raise ValueError('System does not contain any atoms! Use .add_atom()!')
+        if len(self._atoms) > 250000:
+            raise ValueError('Max number of atoms is 250 000.')
+        return self._atoms
+
+    @atoms.setter
+    def atoms(self, value):
+        if value:
+            for a in value:
+                self.add_atom(atom=a)
+
+    def add_atom(self, atom=None, *args, **kwargs):
+        if atom is None:
+            atom = GaussianAtom(*args, **kwargs)
+        if isinstance(atom, GaussianAtom):
+            self._atoms.append(atom)
+        else:
+            raise TypeError('Provide either `atom` or options to construct '
+                            'a GaussianAtom instance.')
 
     # ModRedundant restraints
     @property
@@ -286,10 +417,44 @@ class GaussianInputFile(object):
             line.append(max_)
         self._restraints.append(' '.join(map(str, line)))
 
+    @property
+    def charge(self):
+        if self._charge is None:
+            raise ValueError('Please set charge or use .compute_charge()')
+        charge = self.compute_charge()
+        if self._charge is not None and self._charge != charge:
+            print('! Registered charge ({}) does not match '
+                  'computed charge from atoms ({})'.format(self._charge, charge))
+        return self._charge
+
+    @charge.setter
+    def charge(self, value):
+        self._charge = value
+
+    def compute_charge(self):
+        if self._atoms:
+            return sum(a.charge for a in self.atoms if a.charge is not None)
+    
+    @property
+    def multiplicity(self):
+        return self._multiplicity
+
+    @multiplicity.setter
+    def multiplicity(self, value):
+        self._multiplicity = value
+
 
 class GaussianAtom(object):
 
-    def __init__(self, element, coordinates=None, atom_type=None, charge=None, freeze_code=None,
+    """
+    Object-oriented abstraction of a cartesian atom specification in
+    Gaussian input files.
+
+    It offers support for QM and MM atoms. More info is available at
+    http://gaussian.com/molspec/.
+    """
+
+    def __init__(self, element, coordinates, atom_type=None, charge=None, freeze_code=None,
                  residue_number=None, residue_name=None, pdb_name=None, fragment=None,
                  iso=None, spin=None, zeff=None, qmom=None, nmagm=None, znuc=None,
                  oniom_layer=None, oniom_link=None, oniom_bonded=None, is_link=False):
@@ -695,6 +860,14 @@ class GaussianAtom(object):
 
 class CustomBasisSet(object):
 
+    """
+    Object-oriented abstraction of an extra basis set for Gaussian
+    input files.
+
+    It includes support for ebsel local databases as well as
+    online databases from BSE and Cosmo.
+    """
+
     def __init__(self, basis_set, elements, position=0, extra_args="",):
         if basis_set.rstrip('+*') not in QM_BASIS_SETS:
             raise ValueError('Basis set {} not recognized'.format(basis_set))
@@ -772,11 +945,11 @@ class CustomBasisSet(object):
     @classmethod
     def from_bse(cls, basis_set, *elements):
         try:
-            from ebsel import EMSL_local
+            from ebsel.EMSL_local import EMSL_local
         except ImportError:
             raise ImportError('Access to Basis Set Exchange db requires ebsel package')
 
-        db = EMSL_local.EMSL_local(fmt="g94")
+        db = EMSL_local(fmt="g94")
         try:
             basis = db.get_basis(basis_set, elements=elements)
         except UnboundLocalError:
@@ -792,9 +965,10 @@ class CustomBasisSet(object):
 
 
 def import_from_frcmod(path):
+
     pass 
 
 if __name__ == '__main__':
-    atom = GaussianAtom(element='C', coordinates=(10, 10, 10), atom_type='CT', charge=1.0,
-                        residue_number=1, oniom_layer='H')
+    atom = GaussianAtom(element='C', coordinates=(10, 10, 10), atom_type='CT', 
+                        charge=1.0, residue_number=1, oniom_layer='H')
     print(atom)
