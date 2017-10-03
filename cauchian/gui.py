@@ -284,7 +284,7 @@ class BasisSetDialog(PlumeBaseDialog):
 
     def __init__(self, saved_basis, parent=None, *args, **kwargs):
         try:
-            from ebsel import EMSL_local
+            from ebsel.EMSL_local import EMSL_local
         except ImportError:
             raise chimera.UserError('Package ebsel not found. Please, install it first from:\n'
                                     'https://github.com/jaimergp/ebsel')

@@ -28,6 +28,7 @@ setup(
     description=long_description,
     long_description=long_description,
     packages=find_packages(),
+    package_data={'ebsel': ['db/*.db']},
     include_package_data=True,
     platforms='any',
     classifiers=[
@@ -37,6 +38,5 @@ setup(
         'Intended Audience :: Science/Research',
         'Operating System :: OS Independent',
         'Topic :: Scientific/Engineering :: Chemistry',
-    ],
-    install_requires=['ebsel'],
+    ]
 )
