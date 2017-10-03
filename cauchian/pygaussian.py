@@ -10,7 +10,7 @@ from __future__ import print_function, division
 from string import ascii_letters
 import sys
 import os
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from datetime import datetime
 # Chimera stuff
 # Additional 3rd parties
@@ -90,7 +90,7 @@ class GaussianInputFile(object):
 
     def __init__(self, title='Untitled job', *args, **kwargs):
         self.title = title
-        self._route = {}
+        self._route = defaultdict(list)
         self._link = {}
         self._job = None
         self._charge = None
@@ -100,6 +100,7 @@ class GaussianInputFile(object):
         self._qm_basis_set = None
         self._qm_basis_sets_extra = []
         self._mm_forcefield = None
+        self._mm_water_forcefield = None
         self._mm_forcefield_extra = None
         self._atoms = []
         self._restraints = []
@@ -116,10 +117,12 @@ class GaussianInputFile(object):
                 print('! Keyword {} not recognized'.format(k))
 
     def __str__(self):
-        return '\n'.join(self.build(joined=False)[1:])
+        return self.build(timestamp=False)
 
-    def build(self, joined=True):
-        sections = [self.timestamp]
+    def build(self, timestamp=True):
+        sections = []
+        if timestamp:
+            sections.append(self.timestamp)
         # Link 0
         link = self.link
         if link:
@@ -130,7 +133,7 @@ class GaussianInputFile(object):
         # Title
         sections.append(self.title)
         sections.append('')
-        # Charge, spin and atoms
+        # Charge, multiplicity and atoms
         sections.append(self.system)
         sections.append('')
         # Variables and configuration
@@ -144,9 +147,8 @@ class GaussianInputFile(object):
             sections.append('')
         sections.append('')
         sections.append('')
-        if joined:
-            return '\n'.join(sections)
-        return sections
+        return '\n'.join(sections)
+
     
     @property
     def timestamp(self):
@@ -206,21 +208,19 @@ class GaussianInputFile(object):
 
     @checkpoint.setter
     def checkpoint(self, value):
-        # if not os.path.isfile(value):
-        #     raise ValueError('File {} does not exist'.format(value))
-        self._link['chk'] = value
+        if value:
+            self._link['chk'] = value
 
     ########################################################
     @property
     def route(self):
         s = ['#p', self.modeling]
         for keyword, options in self._route.items():
-            if not options:
-                s.append(keyword)
-            elif len(options) == 1:
-                s.append('{}={}'.format(keyword, *options))
+            valid = [o for o in options if o]
+            if valid:
+                s.append('{}=({})'.format(keyword, ','.join(valid)))
             else:
-                s.append('{}=({})'.format(keyword, ','.join(options)))
+                s.append(keyword)
         return ' '.join(s)
 
     def add_route_option(self, keyword, *options):
@@ -260,17 +260,17 @@ class GaussianInputFile(object):
         if value not in JOB_TYPES:
             raise ValueError('Job must be either of {}'.format(JOB_TYPES))
         self._job = value
-        self._route[value] = ()
+        self._route[value] = []
 
     @property
     def job_options(self):
-        return self._route.get(self._job, ())
+        return self._route.get(self._job)
 
     @job_options.setter
     def job_options(self, value):
         if not isinstance(value, (tuple, list)):
             value = [value]
-        self._route[self._job] = value
+        self._route[self._job].extend(value)
 
     @property
     def freq(self):
@@ -288,7 +288,7 @@ class GaussianInputFile(object):
         if isinstance(value, basestring):
             self._route['freq'] = value
         elif value is True:
-            self._route['freq'] = ()
+            self._route['freq'] = []
         else:
             raise ValueError('freq must be str or bool')
 
@@ -345,10 +345,19 @@ class GaussianInputFile(object):
 
     @mm_forcefield.setter
     def mm_forcefield(self, value):
-        if value not in MM_FORCEFIELDS:
+        if value not in MM_FORCEFIELDS['General']:
             raise ValueError('Forcefield {} not recognized'.format(value))
         self._mm_forcefield = value
+    
+    @property
+    def mm_water_forcefield(self):
+        return self._mm_water_forcefield
 
+    @mm_water_forcefield.setter
+    def mm_water_forcefield(self, value):
+        if value not in MM_FORCEFIELDS['Water']:
+            raise ValueError('Forcefield {} not recognized'.format(value))
+        self._mm_water_forcefield = value
 
     def add_mm_forcefield(self, value):
         if value.endswith('.frcmod') and os.path.isfile(value):
@@ -359,7 +368,7 @@ class GaussianInputFile(object):
     # System
     @property
     def system(self):
-        return '\n'.join(['{} {}'.format(self.charge, self.spin)] + 
+        return '\n'.join(['{} {}'.format(self.charge, self.multiplicity)] + 
                          map(str, self.atoms))
 
     @property 
@@ -718,7 +727,7 @@ class GaussianAtom(object):
         if value is None:
             self._oniom_layer = None
             return
-        if value in ('H', 'h', 'M', 'm', 'L', 'l'):
+        if value.upper() in ('H', 'M', 'L'):
             self._oniom_layer = value.upper()
             return
         raise ValueError('oniom_layer must be H, M, or L')
@@ -824,7 +833,7 @@ class GaussianAtom(object):
     @property
     def coordinates_spec(self):
         if self.coordinates is not None:
-            return ' '.join(map(str, self.coordinates))
+            return '{:>10.6f}{:>10.6f}{:>10.6f}'.format(*self.coordinates)
 
     def __str__(self):
         # Atom element, name, charge

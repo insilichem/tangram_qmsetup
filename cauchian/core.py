@@ -5,6 +5,7 @@
 from __future__ import print_function, division
 # Python stdlib
 from tkFileDialog import askopenfilename, asksaveasfilename
+from copy import deepcopy
 # Chimera stuff
 # Additional 3rd parties
 # Own
@@ -28,6 +29,12 @@ class Controller(object):
         """
         Tie GUI to specific actions and events in the controller
         """
+        # Main buttons
+        for name, button in self.gui.buttonWidgets.items():
+            command = getattr(self, '_cmd_' + name, None)
+            if command:
+                button.configure(command=command)
+        
         # Button actions
         buttons = ('ui_molecules', 'ui_molecules_replicas', 'ui_layers',
                    'ui_solvent_cfg', 'ui_qm_basis_per_atom', 'ui_flex_btn',
@@ -42,7 +49,7 @@ class Controller(object):
         # Event callbacks & variable tracing
         with_callback = ('ui_job', 'ui_job_options', 'ui_calculation',
                          'ui_solvent', 'ui_qm_methods', 'ui_qm_functional_type',
-                         'ui_qm_functionals', 'ui_qm_basis', 'ui_qm_basis_ext',
+                         'ui_qm_functionals', 'ui_qm_basis_kind', 'ui_qm_basis_ext',
                          'ui_mm_forcefields', 'ui_mm_water_forcefield', 'ui_flex_policy',
                          'ui_memory_units')
         for name in with_callback:
@@ -53,9 +60,9 @@ class Controller(object):
 
         variables = ('var_molecule_replicas', 'var_job', 'var_job_options', 'var_frequencies',
                      'var_calculation', 'var_solvent', 'var_qm_method',
-                     'var_qm_functional', 'var_qm_functional_type', 'var_qm_basis',
-                     'var_qm_basis_ext', 'var_qm_basis_custom', 'var_qm_basis',
-                     'var_qm_basis_ext', 'var_mm_forcefield', 'var_mm_water_forcefield',
+                     'var_qm_functional', 'var_qm_functional_type', 'var_qm_basis_set',
+                     'var_qm_basis_kind', 'var_qm_basis_ext',
+                     'var_mm_forcefield', 'var_mm_water_forcefield',
                      'var_mm_frcmod', 'var_charge_qm', 'var_charge_mm',
                      'var_multiplicity_qm', 'var_multiplicity_mm', 'var_flex_policy',
                      'var_flex_lbl', 'var_title', 'var_checkpoint', 'var_checkpoint_path',
@@ -68,6 +75,40 @@ class Controller(object):
                 command()
 
     # Button actions start with _cmd
+    def _cmd_Preview(self, *args):
+        contents = ''
+        self.gui.ui_preview.configure(text_state='normal')
+        self.gui.ui_preview.clear()
+        try:
+            current_file = self.model.build_model_from_current_state()
+            contents = current_file.build(timestamp=True)
+        except Exception as e:
+            self.gui.status('Could not preview file due to ' + str(e)[:50],  
+                            color='red', blankAfter=5)
+        else:
+            self.gui.ui_preview.setvalue('\n'.join(contents.splitlines()[1:]))
+            return contents
+        finally:
+            self.gui.ui_preview.configure(text_state='disabled')
+    
+    def _cmd_Copy(self, *args):
+        contents = self._cmd_Preview()
+        if contents:
+            self.gui.uiMaster().clipboard_clear()
+            self.gui.uiMaster().clipboard_append(contents)
+            self.gui.status('Copied to clipboard!', blankAfter=5)
+    
+    def _cmd_Export(self, *args):
+        contents = self._cmd_Preview()
+        if contents:
+            path = asksaveasfilename(title='Choose destination (.com)',
+                                     filetypes=[('Gaussian input', '*.com'), ('All', '*')],
+                                     defaultextension='.com')
+            if path:
+                with open(path, 'w') as f:
+                    f.write(contents)
+                self.gui.status('Saved to {}!'.format(path), blankAfter=5)
+
     def _cmd_qm_basis_per_atom(self, *args):
         if self._basis_set_dialog is None:
             from gui import BasisSetDialog
@@ -125,11 +166,13 @@ class Controller(object):
         value = self.gui.var_job.get()
         options = JOB_OPTIONS.get(value)
         if options:
-            self.gui.ui_job_options.configure(menubutton_state='normal')
-            self.gui.ui_job_options.setitems(options, index=0)
+            size = len(options) * 20
+            size = size if size <= 200 else 200
+            self.gui.ui_job_options.component('scrolledlist').setlist(options)
+            self.gui.ui_job_options.configure(scrolledlist_hull_height=len(options)*20)
         else:
-            self.gui.ui_job_options.setitems([])
-            self.gui.ui_job_options.configure(menubutton_state='disabled')
+            self.gui.ui_job_options.clear()
+            self.gui.ui_job_options.configure(scrolledlist_hull_height=0)
 
         if value in ('SP', 'Opt'):
             self.gui.ui_frequencies.configure(state='normal')
@@ -150,12 +193,12 @@ class Controller(object):
         value = self.gui.var_qm_functional_type.get()
         self.gui.ui_qm_functionals.setitems(QM_FUNCTIONALS[value], index=0)
 
-    def _trc_qm_basis(self, *args):
-        basis = self.gui.var_qm_basis.get()
+    def _trc_qm_basis_kind(self, *args):
+        basis = self.gui.var_qm_basis_kind.get()
         ext = self.gui.var_qm_basis_ext.get()
         if basis:
-            self.gui.var_qm_basis_custom.set('{}{}'.format(basis, ext if ext else ''))
-    _trc_qm_basis_ext = _trc_qm_basis
+            self.gui.var_qm_basis_set.set('{}{}'.format(basis, ext if ext else ''))
+    _trc_qm_basis_ext = _trc_qm_basis_kind
 
 
 class Model(object):
@@ -168,38 +211,94 @@ class Model(object):
         self.gui = gui
         self._atoms_map = {}
 
-    @property
-    def route(self):
-        state = self.state(with_atoms=False)
-        i = GaussianInputFile(**state)
-        return i.route
-
-    def build_model_from_current_state(self):
-        state = self.state()
-        return GaussianInputFile(**state)
-
-    def state(self, with_atoms=True):
+    def build_model_from_current_state(self, with_atoms=True, with_replicas=False):
+        state = self.state
         self._atoms_map.clear()
+        kwargs = dict(
+            title=state['title'],
+            processors=state['nproc'] or None,
+            memory=(state['memory'] or None, state['memory_units']),
+            checkpoint=state['checkpoint_path'] if state['checkpoint'] else None,
+        )
+        infile = GaussianInputFile(**kwargs)
+        infile.job = state['job']
+        infile.job_options = state['job_options']
+        infile.frequencies = bool(state['frequencies'])
+        infile.qm_method = state['qm_method']
+        infile.qm_basis_set = state['qm_basis_set']
+        if state['qm_method'] == 'DFT':
+            infile.qm_functional = state['qm_functional']
+        if state['qm_basis_set_extra']:
+            for element, bs in state['qm_basis_set_extra'].items():
+                infile.add_extra_basis_set(bs, element)
+        if state['calculation'] == 'ONIOM':  # enter MM details
+            infile.charge = state['charge_qm'] + state['charge_mm']
+            infile.multiplicity = state['multiplicity_qm'] + state['multiplicity_mm']
+            infile.mm_forcefield = state['mm_forcefield']
+            infile.mm_water_forcefield = state['mm_water_forcefield']
+            if state['mm_frcmod']:
+                infile.add_mm_forcefield(state['mm_frcmod'])
+        else:  # QM only details
+            infile.charge = state['charge_qm']
+            infile.multiplicity = state['multiplicity_qm']
+        if state['restraints']:
+            for restraint in state['restraints']:
+                infile.add_restraint(restraint)
+        if state['qm_keywords']:
+            tokens = state['qm_keywords'].split()
+            for token in tokens:
+                key, value = token.split('=')
+                infile.add_route_option(token)
+        
+        if with_atoms:
+            infile.atoms = [self.gaussian_atom(a) for a in state['molecule'].atoms]
+        if with_replicas:
+            infile_replicas = []
+            for replica in state['replicas']:
+                replica_atoms = [self.gaussian_atom(a) for a in replica.atoms]
+                if len(replica_atoms) != len(infile.atoms):
+                    raise ValueError('Replica {} has different number of atoms.'.format(replica))
+                infile_replica = deepcopy(infile)
+                infile_replica.atoms = replica_atoms
+                infile_replicas.append(infile_replica)
+            return infile_replicas
+        
+        return infile
+
+    @property
+    def state(self):
         state = {}
         for attr in dir(self.gui):
             if attr.startswith('var_'):
                 state[attr[4:]] = getattr(self.gui, attr).get()
 
-        state['qm_basis_extra'] = self.gui._qm_basis_extra.copy()
-        print(state)
-        # System
-        if with_atoms:
-            molecules = self.gui.ui_molecules.getvalue()
-            state['atoms'] = [self.chimera_atom_to_gaussian(a)
-                            for m in molecules for a in m.atoms]
+        state['qm_basis_set_extra'] = self.gui._qm_basis_extra.copy()
+        state['restraints'] = self.gui._restraints.copy()
+        state['molecule'] = self.gui.ui_molecules.getvalue()
+        if self.gui.var_molecule_replicas.get():
+            state['replicas'] = self.gui.ui_molecules_replicas.getvalue()
+                
         return state
 
-    def chimera_atom_to_gaussian(self, atom, oniom=False):
+    def gaussian_atom(self, atom, oniom=False):
+        """
+        Creates a GaussianAtom instance from a chimera.Atom object.
+
+        Parameters
+        ----------
+        atom : chimera.atom
+        oniom : bool, optional, default=False
+            Parse additional fields to make it ONIOM-compatible.
+        
+        Returns
+        -------
+        GaussianAtom
+        """
         element = atom.element.name
-        coordinates = tuple(*atom.coord())
-        charge = getattr(atom, 'charge', None)
-        gaussian_atom = GaussianAtom(element, coordinates, charge=charge)
+        coordinates = atom.coord().data()
+        gaussian_atom = GaussianAtom(element, coordinates)
         if oniom:
+            gaussian_atom.charge = getattr(atom, 'charge', None)
             pass # Get & set mooooer attrs
         self._atoms_map[atom] = gaussian_atom
         return gaussian_atom

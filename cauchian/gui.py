@@ -35,13 +35,9 @@ def showUI(callback=None, *args, **kwargs):
 
 class CauchianDialog(PlumeBaseDialog):
 
-    buttons = ('Preview', 'Export', 'Import', 'Close')
-    special_keys = ['??', 'Alt_L', 'BackSpace', 'Caps_Lock', 'Control_L',
-                    'Control_R', 'Delete', 'Down', 'End', 'F1', 'F2', 'F3',
-                    'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
-                    'Home', 'Insert', 'Left', 'Menu', 'Next', 'Num_Lock',
-                    'Pause', 'Prior', 'Return', 'Return', 'Right', 'Scroll_Lock',
-                    'Shift_L', 'Shift_R', 'space', 'Super_L', 'Super_R', 'Tab', 'Up']
+    buttons = ('Preview', 'Copy', 'Export', 'Import', 'Close')
+    statusResizing = False
+    default = 'Preview'
 
     def __init__(self, *args, **kwargs):
         # GUI init
@@ -61,9 +57,9 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_qm_method = tk.StringVar()
         self.var_qm_functional = tk.StringVar()
         self.var_qm_functional_type = tk.StringVar()
-        self.var_qm_basis = tk.StringVar()
+        self.var_qm_basis_kind = tk.StringVar()
         self.var_qm_basis_ext = tk.StringVar()
-        self.var_qm_basis_custom = tk.StringVar()
+        self.var_qm_basis_set = tk.StringVar()
         self._qm_basis_extra = {}
         self.var_qm_keywords = tk.StringVar()
 
@@ -73,8 +69,8 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_mm_frcmod = tk.StringVar()
 
         # Charges & Multiplicity
-        self.var_charge_qm = tk.DoubleVar()
-        self.var_charge_mm = tk.DoubleVar()
+        self.var_charge_qm = tk.IntVar()
+        self.var_charge_mm = tk.IntVar()
         self.var_multiplicity_qm = tk.IntVar()
         self.var_multiplicity_mm = tk.IntVar()
 
@@ -83,9 +79,11 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_flex_lbl = tk.StringVar()
         self.var_flex_lbl.set('No selected atoms')
         self.var_redundant = tk.IntVar()
+        self._restraints = {}
 
         # Hardware & Output variables
         self.var_title = tk.StringVar()
+        self.var_title.set('Untitled Job')
         self.var_checkpoint = tk.IntVar()
         self.var_checkpoint_path = tk.StringVar()
         self.var_nproc = tk.IntVar()
@@ -122,8 +120,8 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_model_frame = tk.LabelFrame(self.canvas, text='Modelization')
         self.ui_job = Pmw.OptionMenu(self.canvas, items=JOB_TYPES, initialitem=0,
                                      menubutton_textvariable=self.var_job)
-        self.ui_job_options = Pmw.OptionMenu(self.canvas, items=['No', 'Min', 'TS'], initialitem=0,
-                                              menubutton_textvariable=self.var_job_options)
+        self.ui_job_options = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_job_options,
+                                           history=True, unique=True, dropdown=True)
         self.ui_frequencies = tk.Checkbutton(self.canvas, variable=self.var_frequencies,
                                              text='Get frequencies')
         self.ui_calculation = Pmw.OptionMenu(self.canvas, items=['QM', 'ONIOM'], initialitem=0,
@@ -149,17 +147,17 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_qm_functionals = Pmw.OptionMenu(self.canvas, initialitem=0,
                                                 items=QM_FUNCTIONALS['Pure'],
                                                 menubutton_textvariable=self.var_qm_functional)
-        self.ui_qm_basis = Pmw.OptionMenu(self.canvas, items=QM_BASIS_SETS, initialitem=0,
-                                          menubutton_textvariable=self.var_qm_basis)
+        self.ui_qm_basis_kind = Pmw.OptionMenu(self.canvas, items=QM_BASIS_SETS, initialitem=0,
+                                          menubutton_textvariable=self.var_qm_basis_kind)
         self.ui_qm_basis_ext = Pmw.OptionMenu(self.canvas, items=QM_BASIS_SETS_EXT, initialitem=0,
                                               menubutton_textvariable=self.var_qm_basis_ext)
         self.ui_qm_basis_per_atom = tk.Button(self.canvas, text='Per-element')
-        self.ui_qm_basis_custom = tk.Entry(self.canvas, textvariable=self.var_qm_basis_custom)
+        self.ui_qm_basis_custom_set = tk.Entry(self.canvas, textvariable=self.var_qm_basis_set)
         self.ui_qm_keywords = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_qm_keywords,
                                            history=True, unique=True, dropdown=True)
 
         qm_grid = [['Method', (self.ui_qm_methods, 'Functional', self.ui_qm_functional_type, self.ui_qm_functionals)],
-                   ['Basis set', (self.ui_qm_basis, self.ui_qm_basis_ext, self.ui_qm_basis_custom, self.ui_qm_basis_per_atom)],
+                   ['Basis set', (self.ui_qm_basis_kind, self.ui_qm_basis_ext, self.ui_qm_basis_custom_set, self.ui_qm_basis_per_atom)],
                    ['Extra keywords', self.ui_qm_keywords]]
         self.auto_grid(self.ui_qm_frame, qm_grid)
 
@@ -231,7 +229,8 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_preview_frame = tk.LabelFrame(self.canvas, text='Preview output')
         self.ui_preview = Pmw.ScrolledText(self.canvas, text_state='disabled',
                                            text_padx=4, text_pady=4, usehullsize=True,
-                                           hull_width=300, hull_height=200,)
+                                           hull_width=300, hull_height=200,
+                                           text_font='Monospace')
         self.ui_preview.pack(in_=self.ui_preview_frame, expand=True, fill='both', padx=5, pady=5)
 
         frames = [[self.ui_molecule_frame, self.ui_model_frame],
@@ -249,6 +248,9 @@ class CauchianDialog(PlumeBaseDialog):
         pass
 
     def Preview(self):
+        pass
+
+    def Copy(self):
         pass
 
 
@@ -278,7 +280,7 @@ class BasisSetDialog(PlumeBaseDialog):
     as an API to local dumps of BSE.
     """
 
-    buttons = ('OK', 'Close')
+    buttons = ('Copy', 'OK', 'Close')
 
     def __init__(self, saved_basis, parent=None, *args, **kwargs):
         try:
@@ -299,7 +301,7 @@ class BasisSetDialog(PlumeBaseDialog):
         self.db_basissets = sorted([b for (b, d) in self.db.get_available_basis_sets()])
 
         # Fire up
-        PlumeBaseDialog.__init__(self, *args, **kwargs)
+        super(BasisSetDialog, self).__init__(self, *args, **kwargs)
 
     def OK(self):
         self._saved_basis.clear()
@@ -351,7 +353,14 @@ class BasisSetDialog(PlumeBaseDialog):
         self.ui_saved_basis_add.grid(row=1, column=0, sticky='we', pady=2, padx=2)
         self.ui_saved_basis_del.grid(row=1, column=1, sticky='we', pady=2, padx=2)
 
-    # Callbacks
+    # Callbacks & Actions
+    def Copy(self, *args):
+        contents = self.ui_output.getvalue()
+        if contents:
+            self.uiMaster().clipboard_clear()
+            self.uiMaster().clipboard_append(contents)
+            self.status('Copied to clipboard!', blankAfter=3)
+
     def _cb_basissets_changed(self):
         self._cb_selection_changed()
 
