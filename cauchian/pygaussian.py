@@ -833,11 +833,11 @@ class GaussianAtom(object):
     @property
     def coordinates_spec(self):
         if self.coordinates is not None:
-            return '{:>10.6f}{:>10.6f}{:>10.6f}'.format(*self.coordinates)
+            return '{:>12.6f} {:>12.6f} {:>12.6f}'.format(*self.coordinates)
 
     def __str__(self):
         # Atom element, name, charge
-        line = [self.atom_spec]
+        line = [self.atom_spec +  ' ']
 
         # Atom keywords
         keywords = self.keywords_spec
