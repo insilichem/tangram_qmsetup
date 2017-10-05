@@ -15,7 +15,7 @@ import chimera.tkgui
 from chimera.baseDialog import ModelessDialog
 from chimera.widgets import MoleculeScrolledListBox
 # Own
-from plumesuite.ui import PlumeBaseDialog
+from libplume.ui import PlumeBaseDialog
 from core import Controller, Model
 from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
                         QM_BASIS_SETS, QM_BASIS_SETS_EXT)
