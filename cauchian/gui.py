@@ -95,7 +95,7 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_labels = {}
 
         # Fire up
-        super(CauchianDialog, self).__init__(self, *args, **kwargs)
+        super(CauchianDialog, self).__init__(*args, **kwargs)
 
     def fill_in_ui(self, parent):
         # Select molecules
@@ -301,7 +301,7 @@ class BasisSetDialog(PlumeBaseDialog):
         self.db_basissets = sorted([b for (b, d) in self.db.get_available_basis_sets()])
 
         # Fire up
-        super(BasisSetDialog, self).__init__(self, *args, **kwargs)
+        super(BasisSetDialog, self).__init__(*args, **kwargs)
 
     def OK(self):
         self._saved_basis.clear()
