@@ -13,9 +13,9 @@ from string import ascii_letters
 import chimera
 import chimera.tkgui
 from chimera.baseDialog import ModelessDialog
-from chimera.widgets import MoleculeScrolledListBox
+from chimera.widgets import MoleculeScrolledListBox, SortableTable, MoleculeOptionMenu
 # Own
-from libplume.ui import PlumeBaseDialog
+from libplume.ui import PlumeBaseDialog, STYLES
 from core import Controller, Model
 from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
                         QM_BASIS_SETS, QM_BASIS_SETS_EXT)
@@ -64,6 +64,7 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_qm_keywords = tk.StringVar()
 
         # MM variables
+        self._layers = {}
         self.var_mm_forcefield = tk.StringVar()
         self.var_mm_water_forcefield = tk.StringVar()
         self.var_mm_frcmod = tk.StringVar()
@@ -282,14 +283,13 @@ class BasisSetDialog(PlumeBaseDialog):
 
     buttons = ('Copy', 'OK', 'Close')
 
-    def __init__(self, saved_basis, parent=None, *args, **kwargs):
+    def __init__(self, saved_basis, *args, **kwargs):
         try:
             from ebsel.EMSL_local import EMSL_local
         except ImportError:
             raise chimera.UserError('Package ebsel not found. Please, install it first from:\n'
                                     'https://github.com/jaimergp/ebsel')
         # GUI init
-        self.parent = parent
         self.title = 'BasisSet Database'
         self._saved_basis = saved_basis
         self.saved_basis = saved_basis.copy()
@@ -446,4 +446,139 @@ class BasisSetDialog(PlumeBaseDialog):
             wid['fg'] = 'black'
         self.ui_basis_sets.setlist(self.db_basissets)
         self.ui_output.settext("")
+
+
+class ONIOMLayersDialog(PlumeBaseDialog):
+
+    """
+    Define ONIOM Layers on a per-atom basis
+    """
+
+    buttons = ('Copy', 'OK', 'Close')
+
+    def __init__(self, saved_layers=None, *args, **kwargs):
+        # Fire up
+        self.title = 'Define ONIOM layers'
+        super(ONIOMLayersDialog, self).__init__(*args, **kwargs)
+        if saved_layers:
+            self.restore_dialog(saved_layers['molecule'], saved_layers['atoms'])
+    
+    def fill_in_ui(self, *args):
+        self.canvas.columnconfigure(1, weight=1)
+
+        row = 1
+        self.ui_molecule = MoleculeOptionMenu(self.canvas, command=self.populate_table)
+        self.ui_molecule.grid(row=row, padx=5, pady=5, sticky='we')
+        row +=1
+        self.ui_toolbar_frame = tk.LabelFrame(self.canvas, text='Selection tools')
+        self.ui_toolbar_frame.grid(row=row, padx=5, pady=5)
+        self.ui_select_all = tk.Button(self.canvas, text='All')
+        self.ui_select_none = tk.Button(self.canvas, text='None')
+        self.ui_select_invert = tk.Button(self.canvas, text='Invert')
+        self.ui_select_selection = tk.Button(self.canvas, text='Current')
+        self.ui_batch_layer_entry = Pmw.EntryField(self.canvas)
+        self.ui_batch_layer_btn = tk.Button(self.canvas, text='Apply')
+        toolbar = [[self.ui_select_all, self.ui_select_none, self.ui_select_invert, 
+                   self.ui_select_selection, (self.ui_batch_layer_entry, self.ui_batch_layer_btn)]]
+        self.auto_grid(self.ui_toolbar_frame, toolbar, padx=3, pady=5)
+
+        row += 1
+        self.ui_table = t = _SortableTableWithEntries(self.canvas)
+        self.ui_table.grid(row=row, padx=5, pady=5, sticky='news')
+        t.addColumn('#', 'serial', format="%d", headerPadX=5, anchor='w')
+        t.addColumn('Atom', 'atom', format=str, headerPadX=100, anchor='w')
+        t.addColumn('Element', 'element', headerPadX=5, anchor='w')
+        t.addColumn('Residue', 'residue', headerPadX=5, anchor='w')
+        t.addColumn('Layer', 'var_layer', format=tk.StringVar, headerPadX=5, anchor='w')
+        t.addColumn('Link', 'var_link', format=bool, headerPadX=5, anchor='w')
+        t.setData([])
+        self.ui_table.launch()
+   
+    def _entry_cell(self, value):
+        w = Pmw.EntryField(self.ui_table, **STYLES[Pmw.EntryField])
+        w.setvalue(value)
+        return w
+   
+    def populate_table(self, molecule):
+        atoms = molecule.atoms
+        data = []
+        for atom in atoms:
+            kwargs = dict(atom=atom,
+                          element=atom.element.name,
+                          residue=str(atom.residue),
+                          serial=atom.serialNumber,
+                          var_layer='',
+                          var_link=False)
+            data.append(_AtomTableProxy(**kwargs))
+        
+        self.ui_table.setData(data)
+        self.ui_table.launch()
+        self.canvas.after(500, self.ui_table.requestFullWidth)
+
+    def restore_dialog(self, molecule, rows):
+        self.ui_molecule_dropdown.set(molecule)
+        for atom, layer, link in rows:
+            self.ui_table.rows[atom].var_layer.set(layer)
+            self.ui_table.rows[atom].var_link.set(int(link))
+    
+    def export_dialog(self):
+        molecule = self.ui_molecule_dropdown.getvalue()
+        rows = []
+        for row in self.ui_table.rows:
+            atom = row.proxy.atom
+            layer = row.proxy.layer
+            link = row.proxy.link
+            rows.append((atom, layer, link))
+        return molecule, rows
+
+
+class _AtomTableProxy(object):
+
+    """
+    Proxy object to ease the creation of table rows
+
+    Attributes
+    ----------
+    atom=atom
+    element=atom.element.name
+    residue=str(atom.residue)
+    serial=atom.serialNumber
+    var_layer=tk.StringVar
+    var_link=tk.IntVar
+    """
+
+    def __init__(self, *args, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    @property
+    def layer(self):
+        return self.var_layer.get()
+
+    @property
+    def link(self):
+        return bool(self.var_link.get())
+
+
+class _SortableTableWithEntries(SortableTable):
+
+    def _createCell(self, hlist, row, col, datum, column):
+        contents = column.displayValue(datum)
+        if not isinstance(contents, tk.StringVar):
+            SortableTable._createCell(self, hlist, row, col, datum, column)
+            return
+        # else:
+        entry = Pmw.EntryField(hlist, 
+                               entry_textvariable=contents, 
+                               entry_width=3,
+                               validate=self._validate_layer,
+                               **STYLES[Pmw.EntryField])
+        widget = self._widgetData[(datum, column)] = entry
+        hlist.item_create(row, col, itemtype="window", window=entry)
+        self.updateCellWidget(datum, column, contents=contents, widget=widget)
+    
+    def _validate_layer(self, text):
+        if text.upper() in ('H', 'M', 'L'):
+            return Pmw.OK
+        return Pmw.ERROR
 

@@ -6,6 +6,7 @@ from __future__ import print_function, division
 # Python stdlib
 from tkFileDialog import askopenfilename, asksaveasfilename
 from copy import deepcopy
+from traceback import print_exc
 # Chimera stuff
 # Additional 3rd parties
 # Own
@@ -21,6 +22,7 @@ class Controller(object):
 
         # Flags
         self._basis_set_dialog = None
+        self._layers_dialog = None
         
         # Tie everything up
         self.set_mvc()
@@ -83,8 +85,9 @@ class Controller(object):
             current_file = self.model.build_model_from_current_state()
             contents = current_file.build(timestamp=True)
         except Exception as e:
-            self.gui.status('Could not preview file due to ' + str(e)[:50],  
-                            color='red', blankAfter=5)
+            self.gui.status('Could not preview file due to {}: {}'.format(type(e).__name__,
+                            str(e)[:50]), color='red', blankAfter=5)
+            print_exc()
         else:
             self.gui.ui_preview.setvalue('\n'.join(contents.splitlines()[1:]))
             return contents
@@ -108,12 +111,19 @@ class Controller(object):
                 with open(path, 'w') as f:
                     f.write(contents)
                 self.gui.status('Saved to {}!'.format(path), blankAfter=5)
+    
+    def _cmd_layers(self, *args):
+        if self._layers_dialog is None:
+            from gui import ONIOMLayersDialog
+            self._layers_dialog = ONIOMLayersDialog(self.gui._layers,
+                                                    master=self.gui.uiMaster())
+        self._layers_dialog.enter()
 
     def _cmd_qm_basis_per_atom(self, *args):
         if self._basis_set_dialog is None:
             from gui import BasisSetDialog
             self._basis_set_dialog = BasisSetDialog(self.gui._qm_basis_extra,
-                                                    parent=self.gui)
+                                                    master=self.gui.uiMaster())
         self._basis_set_dialog.enter()
 
     def _cmd_mm_frcmod_btn(self, *args):
@@ -251,7 +261,7 @@ class Model(object):
                 infile.add_route_option(token)
         
         if with_atoms:
-            infile.atoms = [self.gaussian_atom(a) for a in state['molecule'].atoms]
+            infile.atoms = self.process_atoms(state)
         if with_replicas:
             infile_replicas = []
             for replica in state['replicas']:
@@ -280,7 +290,7 @@ class Model(object):
                 
         return state
 
-    def gaussian_atom(self, atom, oniom=False):
+    def gaussian_atom(self, atom, oniom=True, layer=None):
         """
         Creates a GaussianAtom instance from a chimera.Atom object.
 
@@ -298,7 +308,22 @@ class Model(object):
         coordinates = atom.coord().data()
         gaussian_atom = GaussianAtom(element, coordinates)
         if oniom:
+            if layer is None:
+                raise ValueError('layer must be set if oniom is True')
             gaussian_atom.charge = getattr(atom, 'charge', None)
             pass # Get & set mooooer attrs
         self._atoms_map[atom] = gaussian_atom
         return gaussian_atom
+    
+    def process_atoms(self, state=None):
+        if state is None:
+            state = self.state
+        
+        if state['calculation'] == 'ONIOM':  # we have layers to deal with!
+            layers = state['layers']
+            atoms = [self.gaussian_atom(atom, oniom=True, layer=layers[atom])
+                     for atom in state['molecule'].atoms]
+        else:
+            atoms = [self.gaussian_atom(atom, oniom=False)
+                     for atom in state['molecule'].atoms]
+        return atoms
