@@ -230,6 +230,7 @@ class Model(object):
             processors=state['nproc'] or None,
             memory=(state['memory'] or None, state['memory_units']),
             checkpoint=state['checkpoint_path'] if state['checkpoint'] else None,
+            connectivity=state['connectivity'],
         )
         infile = GaussianInputFile(**kwargs)
         infile.job = state['job']
@@ -262,11 +263,12 @@ class Model(object):
                 infile.add_route_option(token)
         
         if with_atoms:
-            infile.atoms = self.process_atoms(state)
+            infile.atoms = self.process_atoms(state, connectivity=state['connectivity'])
         if with_replicas:
             infile_replicas = []
             for replica in state['replicas']:
-                replica_atoms = [self.gaussian_atom(a) for a in replica.atoms]
+                replica_atoms = [self.gaussian_atom(a, n=i+1) 
+                                 for i, a in enumerate(replica.atoms)]
                 if len(replica_atoms) != len(infile.atoms):
                     raise ValueError('Replica {} has different number of atoms.'.format(replica))
                 infile_replica = deepcopy(infile)
@@ -292,7 +294,7 @@ class Model(object):
                 
         return state
 
-    def gaussian_atom(self, atom, oniom=True, layer=None, link=None):
+    def gaussian_atom(self, atom, n, oniom=True, layer=None, link=None):
         """
         Creates a GaussianAtom instance from a chimera.Atom object.
 
@@ -308,12 +310,13 @@ class Model(object):
         """
         element = atom.element.name
         coordinates = atom.coord().data()
-        gatom = GaussianAtom(element, coordinates)
+        gatom = GaussianAtom(element, coordinates, n)
         if oniom:
             if layer is None:
                 raise ValueError('layer must be set if oniom is True')
             gatom.pdb_name = atom.name
             gatom.atom_type = atom.idatmType
+            gatom.geometry = chimera.idatm[gatom.idatmType].geometry
             gatom.residue_name = atom.residue.type
             gatom.residue_number = atom.residue.id.position
             gatom.oniom_layer = layer
@@ -322,17 +325,29 @@ class Model(object):
         self._atoms_map[atom] = gatom
         return gatom
     
-    def process_atoms(self, state=None):
+    def process_atoms(self, state=None, connectivity=True):
         if state is None:
             state = self.state
-        
+        gaussian_atoms = []
+        chimera_atoms = state['molecule'].atoms
+        mapping = {}
+        oniom, kw = False, {}
+
         if state['calculation'] == 'ONIOM':  # we have layers to deal with!
+            oniom = True
             layers = state['layers']
             if not layers:
-                raise chimera.UserError('ONIOM layers have not been defined!')
-            atoms = [self.gaussian_atom(atom, oniom=True, layer=layers[atom])
-                     for atom in state['molecule'].atoms]
-        else:
-            atoms = [self.gaussian_atom(atom, oniom=False)
-                     for atom in state['molecule'].atoms]
-        return atoms
+                raise chimera.UserError('ONIOM layers have not been defined!') 
+        for n, catom in enumerate(chimera_atoms):
+            if oniom:
+                kw = dict(layer=layers[catom], link=None)
+            gatom = self.gaussian_atom(catom, n=n+1, oniom=oniom, **kw)
+            gaussian_atoms.append(gatom)
+            mapping[catom] = gatom
+        
+        if connectivity:
+            for catom, gatom in zip(chimera_atoms, gaussian_atoms):
+                for neighbor in catom.neighbors:
+                    gatom.neighbors.append(mapping[neighbor])
+        
+        return gaussian_atoms

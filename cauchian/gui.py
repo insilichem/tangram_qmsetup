@@ -50,6 +50,7 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_job = tk.StringVar()
         self.var_job_options = tk.StringVar()
         self.var_frequencies = tk.IntVar()
+        self.var_connectivity = tk.IntVar()
         self.var_calculation = tk.StringVar()
         self.var_solvent = tk.StringVar()
 
@@ -124,17 +125,20 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_job_options = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_job_options,
                                            history=True, unique=True, dropdown=True)
         self.ui_frequencies = tk.Checkbutton(self.canvas, variable=self.var_frequencies,
-                                             text='Get frequencies')
+                                             text='+ Freq')
+        self.ui_connectivity = tk.Checkbutton(self.canvas, variable=self.var_connectivity,
+                                             text='With connectivity')
         self.ui_calculation = Pmw.OptionMenu(self.canvas, items=['QM', 'ONIOM'], initialitem=0,
                                              menubutton_textvariable=self.var_calculation)
         self.ui_layers = tk.Button(self.canvas, text='Define layers')
         self.ui_solvent = Pmw.OptionMenu(self.canvas, items=['Implicit', 'Explicit'], initialitem=0,
-                                         menubutton_textvariable=self.var_solvent)
+                                         menubutton_textvariable=self.var_solvent,
+                                         hull_width=10)
         self.ui_solvent_cfg = tk.Button(self.canvas, text='Configure')
 
         model_grid = [['Model', self.ui_calculation, self.ui_layers],
                       ['Job', self.ui_job, self.ui_job_options],
-                      ['', '', self.ui_frequencies],
+                      ['', self.ui_connectivity, self.ui_frequencies],
                       ['Solvent', self.ui_solvent, self.ui_solvent_cfg]]
         self.auto_grid(self.ui_model_frame, model_grid)
 
@@ -558,10 +562,10 @@ class ONIOMLayersDialog(PlumeBaseDialog):
 
     def _cb_select_selection(self, *args, **kwargs):
         self._cb_select_none()
-        for atom in chimera.selection.currentAtoms():
-            if atom.molecule in self.atoms2rows:
-                row = self.atoms2rows[atom.molecule][atom]
-                self.ui_table.select(row)
+        rows = [self.atoms2rows[atom.molecule][atom] 
+                for atom in chimera.selection.currentAtoms()
+                if atom.molecule in self.atoms2rows]
+        self.ui_table.select(rows)
     
     def OK(self, *args, **kwargs):
         self.layers.clear()

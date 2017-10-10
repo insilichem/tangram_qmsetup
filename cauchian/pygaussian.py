@@ -12,9 +12,6 @@ import sys
 import os
 from collections import namedtuple, defaultdict
 from datetime import datetime
-# Chimera stuff
-# Additional 3rd parties
-# Own
 
 if sys.version_info.major == 3:
     basestring = str
@@ -87,9 +84,11 @@ class GaussianInputFile(object):
     More info about Gaussian input formats can be consulted
     in http://gaussian.com/input/.
     """
+    _rdkit_cache = {}  # For bond order perception
 
-    def __init__(self, title='Untitled job', *args, **kwargs):
+    def __init__(self, title='Untitled job', connectivity=False, *args, **kwargs):
         self.title = title
+        self.connectivity = connectivity
         self._route = defaultdict(list)
         self._link = {}
         self._job = None
@@ -140,6 +139,9 @@ class GaussianInputFile(object):
         restraints = self.restraints
         if restraints:
             sections.append(restraints)
+            sections.append('')
+        if self.connectivity:
+            sections.append(self.compute_connectivity())
             sections.append('')
         qm_basis_set_extra = self.qm_basis_set_extra
         if qm_basis_set_extra:
@@ -439,10 +441,6 @@ class GaussianInputFile(object):
     def charge(self, value):
         self._charge = value
 
-    def compute_charge(self):
-        if self._atoms:
-            return sum(a.charge for a in self.atoms if a.charge is not None)
-
     @property
     def multiplicity(self):
         return self._multiplicity
@@ -451,6 +449,36 @@ class GaussianInputFile(object):
     def multiplicity(self, value):
         self._multiplicity = value
 
+    ###########################
+    def compute_charge(self):
+        if self._atoms:
+            return sum(a.charge for a in self.atoms if a.charge is not None)
+
+    def compute_connectivity(self):
+        lines = []
+        seen = set()
+        for atom in self.atoms:
+            if not atom.neighbors:
+                continue
+            seen.add(atom)
+            line = []
+            for neighbor in atom.neighbors:
+                if neighbor not in seen:
+                    order = self.compute_bond_order(atom, neighbor)
+                    line.append('{} {}'.format(neighbor.n, 1.0))
+                    seen.add(neighbor)
+            if line:
+                lines.append('{} {}'.format(atom.n, ' '.join(line)))
+            
+        return '\n'.join(lines)
+    
+    def compute_bond_order(self, a1, a2):
+        try:
+            return self._compute_bond_order_with_rdkit(a1, a2)
+        except Exception as e:
+            print('Warning: Bypassing bond order perception due to: '
+                  '{}: {}.'.format(type(e).__name__, e))
+            return 1.0
 
 class GaussianAtom(object):
 
@@ -462,10 +490,12 @@ class GaussianAtom(object):
     http://gaussian.com/molspec/.
     """
 
-    def __init__(self, element, coordinates, atom_type=None, charge=None, freeze_code=None,
+    def __init__(self, element, coordinates, n, atom_type=None, charge=None, freeze_code=None,
                  residue_number=None, residue_name=None, pdb_name=None, fragment=None,
                  iso=None, spin=None, zeff=None, qmom=None, nmagm=None, znuc=None,
-                 oniom_layer=None, oniom_link=None, oniom_bonded=None, is_link=False):
+                 oniom_layer=None, oniom_link=None, oniom_bonded=None, is_link=False,
+                 geometry=None):
+        self.n = n
         self._element = None
         self._coordinates = None
         self._atom_type = None
@@ -484,7 +514,9 @@ class GaussianAtom(object):
         self._oniom_layer = None
         self._oniom_link = None
         self._oniom_bonded = None
+        self._geometry = None
         self.is_link = bool(is_link)
+        self.neighbors = []
 
         # Set and verify
         self.element = element
@@ -504,6 +536,7 @@ class GaussianAtom(object):
         self.znuc = znuc
         self.oniom_layer = oniom_layer
         self.oniom_link = oniom_link
+        self.geometry = geometry
 
     @property
     def element(self):
@@ -793,6 +826,21 @@ class GaussianAtom(object):
         raise ValueError('oniom_scale_factors must be tuple of float, three values max. '
                          'Value provided: {}'.format(value))
 
+    @property
+    def geometry(self):
+        return self._geometry
+
+    @geometry.setter
+    def geometry(self, value):
+        if value is None:
+            self._geometry = value
+            return
+        try:
+            self.geometry = int(value)
+        except (ValueError, TypeError):
+            raise ValueError('geometry must be int or int-like. '
+                             'Value provided: {}'.format(value))
+
     #--------------------------------------
     # Helper methods
     #--------------------------------------
@@ -996,6 +1044,6 @@ def import_from_frcmod(path):
     pass
 
 if __name__ == '__main__':
-    atom = GaussianAtom(element='C', coordinates=(10, 10, 10), atom_type='CT',
+    atom = GaussianAtom(element='C', coordinates=(10, 10, 10), n=1, atom_type='CT',
                         charge=1.0, residue_number=1, oniom_layer='H')
     print(atom)
