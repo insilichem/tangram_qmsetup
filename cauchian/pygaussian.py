@@ -515,7 +515,8 @@ class GaussianAtom(object):
             self._element = None
             return
         if not value or value[0] not in ascii_letters:
-            raise ValueError('Element cannot be empty and must start with a letter')
+            raise ValueError('Element cannot be empty and must start with a letter. '
+                             'Value provided: {}'.format(value))
         self._element = value
 
     @property
@@ -534,7 +535,8 @@ class GaussianAtom(object):
                 return
         except (ValueError, TypeError):
             pass
-        raise ValueError('Coordinates must be 3-tuple of float (x, y, z)')
+        raise ValueError('Coordinates must be 3-tuple of float (x, y, z). '
+                         'Value provided: {}'.format(value))
 
     @property
     def atom_type(self):
@@ -546,7 +548,8 @@ class GaussianAtom(object):
             self._atom_type = None
             return
         if not value or value[0] not in ascii_letters:
-            raise ValueError('Atom_type cannot be empty and must start with a letter')
+            raise ValueError('Atom_type cannot be empty and must start with a letter. '
+                             'Value provided: {}'.format(value))
         self._atom_type = value
 
     @property
@@ -563,7 +566,8 @@ class GaussianAtom(object):
         try:
             self._charge = float(value)
         except TypeError:
-            raise ValueError('Charge values must be float or float-like')
+            raise ValueError('Charge values must be float or float-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def freeze_code(self):
@@ -577,7 +581,8 @@ class GaussianAtom(object):
         if isinstance(value, int) and value <= 0:
             self._freeze_code = value
             return
-        raise ValueError('Freeze_code must be int and <= 0')
+        raise ValueError('Freeze_code must be int and <= 0. '
+                         'Value provided: {}'.format(value))
 
     @property
     def residue_number(self):
@@ -589,7 +594,8 @@ class GaussianAtom(object):
             self._residue_number = None
             return
         if not isinstance(value, int):
-            raise ValueError('residue_number must be int')
+            raise ValueError('residue_number must be int. '
+                             'Value provided: {}'.format(value))
         self._residue_number = value
 
     @property
@@ -601,10 +607,11 @@ class GaussianAtom(object):
         if value is None:
             self._residue_name = None
             return
-        if isinstance(value, basestring) and value and value[0] not in ascii_letters:
+        if isinstance(value, basestring) and value and value[0] in ascii_letters:
             self._residue_name = value
             return
-        raise ValueError('residue_name cannot be empty and must start with a letter')
+        raise ValueError('residue_name cannot be empty and must start with a letter. '
+                         'Value provided: {}'.format(value))
 
     @property
     def pdb_name(self):
@@ -615,10 +622,11 @@ class GaussianAtom(object):
         if value is None:
             self._pdb_name = None
             return
-        if isinstance(value, basestring) and value and value[0] not in ascii_letters:
+        if isinstance(value, basestring) and value and value[0] in ascii_letters:
             self._pdb_name = value
             return
-        raise ValueError('pdb_name cannot be empty and must start with a letter')
+        raise ValueError('pdb_name cannot be empty and must start with a letter. '
+                         'Value provided: {}'.format(value))
 
     @property
     def fragment(self):
@@ -630,7 +638,8 @@ class GaussianAtom(object):
             self._fragment = None
             return
         if not isinstance(value, int):
-            raise ValueError('spin values must be int')
+            raise ValueError('spin values must be int. '
+                             'Value provided: {}'.format(value))
         self._fragment = value
 
     @property
@@ -645,7 +654,8 @@ class GaussianAtom(object):
         try:
             self._iso = float(value)
         except ValueError:
-            raise ValueError('iso must be float or float-like')
+            raise ValueError('iso must be float or float-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def spin(self):
@@ -659,7 +669,8 @@ class GaussianAtom(object):
         try:
             self._spin = float(value)
         except ValueError:
-            raise ValueError('spin must be float or float-like')
+            raise ValueError('spin must be float or float-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def zeff(self):
@@ -673,7 +684,8 @@ class GaussianAtom(object):
         try:
             self._zeff = float(value)
         except ValueError:
-            raise ValueError('zeff must be float or float-like')
+            raise ValueError('zeff must be float or float-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def qmom(self):
@@ -687,7 +699,8 @@ class GaussianAtom(object):
         try:
             self._qmom = float(value)
         except ValueError:
-            raise ValueError('qmom must be float or float-like')
+            raise ValueError('qmom must be float or float-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def nmagm(self):
@@ -701,7 +714,8 @@ class GaussianAtom(object):
         try:
             self._nmagm = float(value)
         except ValueError:
-            raise ValueError('nmagm must be float or float-like')
+            raise ValueError('nmagm must be float or float-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def znuc(self):
@@ -715,7 +729,8 @@ class GaussianAtom(object):
         try:
             self._znuc = float(value)
         except ValueError:
-            raise ValueError('znuc must be float or float-like')
+            raise ValueError('znuc must be float or float-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def oniom_layer(self):
@@ -729,7 +744,8 @@ class GaussianAtom(object):
         if value.upper() in ('H', 'M', 'L'):
             self._oniom_layer = value.upper()
             return
-        raise ValueError('oniom_layer must be H, M, or L')
+        raise ValueError('oniom_layer must be H, M, or L. ' 
+                         'Value provided: {}'.format(value))
 
     @property
     def oniom_link(self):
@@ -741,7 +757,8 @@ class GaussianAtom(object):
             self._oniom_link = None
             return
         if not isinstance(value, GaussianAtom):
-            raise ValueError('oniom_link must be a GaussianAtom instance')
+            raise ValueError('oniom_link must be a GaussianAtom instance. '
+                             'Value provided: {}'.format(value))
 
     @property
     def oniom_bonded(self):
@@ -755,7 +772,8 @@ class GaussianAtom(object):
         try:
             self._oniom_bonded = int(value)
         except ValueError:
-            raise ValueError('oniom_bonded must be int or int-like')
+            raise ValueError('oniom_bonded must be int or int-like. '
+                             'Value provided: {}'.format(value))
 
     @property
     def oniom_scale_factors(self):
@@ -772,7 +790,8 @@ class GaussianAtom(object):
                 return
         except (ValueError, TypeError):
             pass
-        raise ValueError('oniom_scale_factors must be tuple of float, three values max')
+        raise ValueError('oniom_scale_factors must be tuple of float, three values max. '
+                         'Value provided: {}'.format(value))
 
     #--------------------------------------
     # Helper methods
@@ -836,7 +855,7 @@ class GaussianAtom(object):
 
     def __str__(self):
         # Atom element, name, charge
-        line = [self.atom_spec +  ' ']
+        line = [self.atom_spec]
 
         # Atom keywords
         keywords = self.keywords_spec
