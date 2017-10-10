@@ -454,82 +454,121 @@ class ONIOMLayersDialog(PlumeBaseDialog):
     Define ONIOM Layers on a per-atom basis
     """
 
-    buttons = ('Copy', 'OK', 'Close')
+    buttons = ('OK', 'Close')
 
     def __init__(self, saved_layers=None, *args, **kwargs):
         # Fire up
         self.title = 'Define ONIOM layers'
-        super(ONIOMLayersDialog, self).__init__(*args, **kwargs)
+        self.atoms2rows = {}
+        self.layers = saved_layers
+        super(ONIOMLayersDialog, self).__init__(with_logo=False, *args, **kwargs)
         if saved_layers:
             self.restore_dialog(saved_layers['molecule'], saved_layers['atoms'])
     
     def fill_in_ui(self, *args):
-        self.canvas.columnconfigure(1, weight=1)
+        self.canvas.columnconfigure(0, weight=1)
 
         row = 1
         self.ui_molecule = MoleculeOptionMenu(self.canvas, command=self.populate_table)
         self.ui_molecule.grid(row=row, padx=5, pady=5, sticky='we')
         row +=1
         self.ui_toolbar_frame = tk.LabelFrame(self.canvas, text='Selection tools')
-        self.ui_toolbar_frame.grid(row=row, padx=5, pady=5)
-        self.ui_select_all = tk.Button(self.canvas, text='All')
-        self.ui_select_none = tk.Button(self.canvas, text='None')
-        self.ui_select_invert = tk.Button(self.canvas, text='Invert')
-        self.ui_select_selection = tk.Button(self.canvas, text='Current')
-        self.ui_batch_layer_entry = Pmw.EntryField(self.canvas)
-        self.ui_batch_layer_btn = tk.Button(self.canvas, text='Apply')
+        self.ui_toolbar_frame.grid(row=row, padx=5, pady=5, sticky='w')
+        self.ui_select_all = tk.Button(self.canvas, text='All', command=self._cb_select_all)
+        self.ui_select_none = tk.Button(self.canvas, text='None', command=self._cb_select_none)
+        self.ui_select_invert = tk.Button(self.canvas, text='Invert', command=self._cb_select_invert)
+        self.ui_select_selection = tk.Button(self.canvas, text='Current', command=self._cb_select_selection)
+        self.ui_batch_layer_entry = Pmw.EntryField(self.canvas, labelpos='w', entry_width=3,
+                                                   label_text='Layer for selected:',
+                                                   validate=_SortableTableWithEntries._validate_layer)
+        self.ui_batch_layer_btn = tk.Button(self.canvas, text='Set',
+                                            command=self._cb_batch_layer_btn)
         toolbar = [[self.ui_select_all, self.ui_select_none, self.ui_select_invert, 
                    self.ui_select_selection, (self.ui_batch_layer_entry, self.ui_batch_layer_btn)]]
-        self.auto_grid(self.ui_toolbar_frame, toolbar, padx=3, pady=5)
+        self.auto_grid(self.ui_toolbar_frame, toolbar, padx=3, pady=5, sticky='w')
 
         row += 1
+        self.canvas.rowconfigure(row, weight=1)
         self.ui_table = t = _SortableTableWithEntries(self.canvas)
         self.ui_table.grid(row=row, padx=5, pady=5, sticky='news')
-        t.addColumn('#', 'serial', format="%d", headerPadX=5, anchor='w')
-        t.addColumn('Atom', 'atom', format=str, headerPadX=100, anchor='w')
-        t.addColumn('Element', 'element', headerPadX=5, anchor='w')
-        t.addColumn('Residue', 'residue', headerPadX=5, anchor='w')
-        t.addColumn('Layer', 'var_layer', format=tk.StringVar, headerPadX=5, anchor='w')
-        t.addColumn('Link', 'var_link', format=bool, headerPadX=5, anchor='w')
-        t.setData([])
-        self.ui_table.launch()
-   
-    def _entry_cell(self, value):
-        w = Pmw.EntryField(self.ui_table, **STYLES[Pmw.EntryField])
-        w.setvalue(value)
-        return w
+        kw = dict(anchor='w', refresh=False)
+        t.addColumn('#', 'serial', format="%d", headerPadX=5, **kw)
+        t.addColumn('Atom', 'atom', format=str, headerPadX=75, **kw)
+        t.addColumn('Element', 'element', headerPadX=5, **kw)
+        t.addColumn('Type', 'idatmtype', format=str, headerPadX=5, **kw)
+        t.addColumn('Layer', 'var_layer', format=lambda a: a, headerPadX=5, **kw)
+        t.addColumn('Link', 'link', format=bool, headerPadX=5, **kw)
+        if self.ui_molecule.getvalue():
+            self.ui_molecule.invoke()
+        else:
+            t.setData([])
+        t.launch()
    
     def populate_table(self, molecule):
         atoms = molecule.atoms
         data = []
+        mapping = self.atoms2rows[molecule] = {}
         for atom in atoms:
             kwargs = dict(atom=atom,
                           element=atom.element.name,
-                          residue=str(atom.residue),
-                          serial=atom.serialNumber,
-                          var_layer='',
-                          var_link=False)
-            data.append(_AtomTableProxy(**kwargs))
-        
+                          idatmtype=atom.idatmType,
+                          serial=atom.serialNumber)
+            mapping[atom] = row = _AtomTableProxy(**kwargs)
+            data.append(row)
         self.ui_table.setData(data)
-        self.ui_table.launch()
-        self.canvas.after(500, self.ui_table.requestFullWidth)
 
     def restore_dialog(self, molecule, rows):
         self.ui_molecule_dropdown.set(molecule)
         for atom, layer, link in rows:
-            self.ui_table.rows[atom].var_layer.set(layer)
-            self.ui_table.rows[atom].var_link.set(int(link))
+            row = self.atoms2rows[atom]
+            row.layer = layer
+            row.link = link
+        self.ui_table.refresh()
     
     def export_dialog(self):
-        molecule = self.ui_molecule_dropdown.getvalue()
+        molecule = self.ui_molecule.getvalue()
         rows = []
-        for row in self.ui_table.rows:
-            atom = row.proxy.atom
-            layer = row.proxy.layer
-            link = row.proxy.link
+        for row in self.ui_table.data:
+            atom = row.atom
+            layer = row.layer
+            link = row.link
             rows.append((atom, layer, link))
         return molecule, rows
+    
+    def _cb_batch_layer_btn(self, *args, **kwargs):
+        layer = self.ui_batch_layer_entry.get()
+        for row in self.ui_table.selected():
+            row.layer = layer
+    
+    def _cb_select_all(self, *args, **kwargs):
+        hlist = self.ui_table.tixTable.hlist
+        hlist.selection_set(0, hlist.info_children()[-1])
+        self.ui_table.refresh()
+
+    def _cb_select_none(self, *args, **kwargs):
+        self.ui_table.tixTable.hlist.selection_clear()
+
+    def _cb_select_invert(self, *args, **kwargs):
+        hlist = self.ui_table.tixTable.hlist
+        selected = set(hlist.info_selection())
+        all_entries = set(hlist.info_children())
+        self._cb_select_none()
+        for row in selected ^ all_entries:
+            hlist.selection_set(row)
+
+    def _cb_select_selection(self, *args, **kwargs):
+        self._cb_select_none()
+        for atom in chimera.selection.currentAtoms():
+            if atom.molecule in self.atoms2rows:
+                row = self.atoms2rows[atom.molecule][atom]
+                self.ui_table.select(row)
+    
+    def OK(self, *args, **kwargs):
+        self.layers.clear()
+        molecule, rows = self.export_dialog()
+        for atom, layer, link in rows:
+            self.layers[atom] = layer
+        self.Close()
 
 
 class _AtomTableProxy(object):
@@ -550,35 +589,47 @@ class _AtomTableProxy(object):
     def __init__(self, *args, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
+        
+        self.var_layer = tk.StringVar()
+        self.var_layer.set('')
+        self.var_link = tk.IntVar()
+        self.var_link.set(0)
 
     @property
     def layer(self):
         return self.var_layer.get()
+    
+    @layer.setter
+    def layer(self, value):
+        self.var_layer.set(value.strip().upper())
 
     @property
     def link(self):
         return bool(self.var_link.get())
+
+    @link.setter
+    def link(self, value, *args, **kwargs):
+        self.var_link.set(value)
 
 
 class _SortableTableWithEntries(SortableTable):
 
     def _createCell(self, hlist, row, col, datum, column):
         contents = column.displayValue(datum)
-        if not isinstance(contents, tk.StringVar):
-            SortableTable._createCell(self, hlist, row, col, datum, column)
+        if isinstance(contents, tk.StringVar):
+            entry = Pmw.EntryField(hlist, 
+                                   entry_textvariable=contents, 
+                                   entry_width=3,
+                                   validate=self._validate_layer,
+                                   **STYLES[Pmw.EntryField])
+            widget = self._widgetData[(datum, column)] = entry
+            hlist.item_create(row, col, itemtype="window", window=entry)
             return
-        # else:
-        entry = Pmw.EntryField(hlist, 
-                               entry_textvariable=contents, 
-                               entry_width=3,
-                               validate=self._validate_layer,
-                               **STYLES[Pmw.EntryField])
-        widget = self._widgetData[(datum, column)] = entry
-        hlist.item_create(row, col, itemtype="window", window=entry)
-        self.updateCellWidget(datum, column, contents=contents, widget=widget)
-    
-    def _validate_layer(self, text):
-        if text.upper() in ('H', 'M', 'L'):
-            return Pmw.OK
-        return Pmw.ERROR
 
+        SortableTable._createCell(self, hlist, row, col, datum, column)
+
+    @staticmethod
+    def _validate_layer(text):
+        if text.strip().upper() in ('', 'H', 'M', 'L'):
+            return Pmw.OK
+        return Pmw.PARTIAL

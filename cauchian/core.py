@@ -8,6 +8,7 @@ from tkFileDialog import askopenfilename, asksaveasfilename
 from copy import deepcopy
 from traceback import print_exc
 # Chimera stuff
+import chimera
 # Additional 3rd parties
 # Own
 from pygaussian import GaussianAtom, GaussianInputFile
@@ -285,12 +286,13 @@ class Model(object):
         state['qm_basis_set_extra'] = self.gui._qm_basis_extra.copy()
         state['restraints'] = self.gui._restraints.copy()
         state['molecule'] = self.gui.ui_molecules.getvalue()
+        state['layers'] = self.gui._layers.copy()
         if self.gui.var_molecule_replicas.get():
             state['replicas'] = self.gui.ui_molecules_replicas.getvalue()
                 
         return state
 
-    def gaussian_atom(self, atom, oniom=True, layer=None):
+    def gaussian_atom(self, atom, oniom=True, layer=None, link=None):
         """
         Creates a GaussianAtom instance from a chimera.Atom object.
 
@@ -306,14 +308,19 @@ class Model(object):
         """
         element = atom.element.name
         coordinates = atom.coord().data()
-        gaussian_atom = GaussianAtom(element, coordinates)
+        gatom = GaussianAtom(element, coordinates)
         if oniom:
             if layer is None:
                 raise ValueError('layer must be set if oniom is True')
-            gaussian_atom.charge = getattr(atom, 'charge', None)
-            pass # Get & set mooooer attrs
-        self._atoms_map[atom] = gaussian_atom
-        return gaussian_atom
+            gatom.pdb_name = atom.name
+            gatom.atom_type = atom.idatmType
+            gatom.residue_name = atom.residue.type
+            gatom.residue_number = atom.residue.id.position
+            gatom.oniom_layer = layer
+            gatom.oniom_link = link
+            gatom.charge = getattr(atom, 'charge', None)
+        self._atoms_map[atom] = gatom
+        return gatom
     
     def process_atoms(self, state=None):
         if state is None:
@@ -321,6 +328,8 @@ class Model(object):
         
         if state['calculation'] == 'ONIOM':  # we have layers to deal with!
             layers = state['layers']
+            if not layers:
+                raise chimera.UserError('ONIOM layers have not been defined!')
             atoms = [self.gaussian_atom(atom, oniom=True, layer=layers[atom])
                      for atom in state['molecule'].atoms]
         else:
