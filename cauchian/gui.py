@@ -12,6 +12,7 @@ from string import ascii_letters
 # Chimera stuff
 import chimera
 import chimera.tkgui
+from chimera import UserError
 from chimera.baseDialog import ModelessDialog
 from chimera.widgets import MoleculeScrolledListBox, SortableTable, MoleculeOptionMenu
 # Own
@@ -541,8 +542,11 @@ class ONIOMLayersDialog(PlumeBaseDialog):
     
     def _cb_batch_layer_btn(self, *args, **kwargs):
         layer = self.ui_batch_layer_entry.get()
-        for row in self.ui_table.selected():
+        selected = self.ui_table.selected()
+        for row in selected:
             row.layer = layer
+        self.status('Applied layer {} to {} rows'.format(layer, len(selected)),
+                    color='blue', blankAfter=3)
     
     def _cb_select_all(self, *args, **kwargs):
         hlist = self.ui_table.tixTable.hlist
@@ -562,15 +566,19 @@ class ONIOMLayersDialog(PlumeBaseDialog):
 
     def _cb_select_selection(self, *args, **kwargs):
         self._cb_select_none()
-        rows = [self.atoms2rows[atom.molecule][atom] 
-                for atom in chimera.selection.currentAtoms()
-                if atom.molecule in self.atoms2rows]
+        rows = [self.atoms2rows.get(atom.molecule, {}).get(atom)
+                for atom in chimera.selection.currentAtoms()]
         self.ui_table.select(rows)
     
     def OK(self, *args, **kwargs):
         self.layers.clear()
         molecule, rows = self.export_dialog()
-        for atom, layer, link in rows:
+        for i, (atom, layer, link) in enumerate(rows):
+            if not layer:
+                not_filledin = len([1 for row in rows[i+1:] if not row[1]])
+                raise UserError('Atom {} {} no layer defined!'.format(atom, 
+                                'and {} atoms more have'.format(not_filledin) 
+                                if not_filledin else 'has'))
             self.layers[atom] = layer
         self.Close()
 
@@ -634,6 +642,6 @@ class _SortableTableWithEntries(SortableTable):
 
     @staticmethod
     def _validate_layer(text):
-        if text.strip().upper() in ('', 'H', 'M', 'L'):
+        if text.strip().upper() in ('H', 'L', 'M', ''):
             return Pmw.OK
         return Pmw.PARTIAL
