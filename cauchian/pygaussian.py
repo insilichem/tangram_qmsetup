@@ -84,7 +84,6 @@ class GaussianInputFile(object):
     More info about Gaussian input formats can be consulted
     in http://gaussian.com/input/.
     """
-    _rdkit_cache = {}  # For bond order perception
 
     def __init__(self, title='Untitled job', connectivity=False, *args, **kwargs):
         self.title = title
@@ -462,23 +461,15 @@ class GaussianInputFile(object):
                 continue
             seen.add(atom)
             line = []
-            for neighbor in atom.neighbors:
+            for neighbor, bondorder in atom.neighbors:
                 if neighbor not in seen:
-                    order = self.compute_bond_order(atom, neighbor)
-                    line.append('{} {}'.format(neighbor.n, 1.0))
+                    line.append('{} {}'.format(neighbor.n, bondorder))
                     seen.add(neighbor)
             if line:
                 lines.append('{} {}'.format(atom.n, ' '.join(line)))
             
         return '\n'.join(lines)
-    
-    def compute_bond_order(self, a1, a2):
-        try:
-            return self._compute_bond_order_with_rdkit(a1, a2)
-        except Exception as e:
-            print('Warning: Bypassing bond order perception due to: '
-                  '{}: {}.'.format(type(e).__name__, e))
-            return 1.0
+                
 
 class GaussianAtom(object):
 
@@ -516,7 +507,7 @@ class GaussianAtom(object):
         self._oniom_bonded = None
         self._geometry = None
         self.is_link = bool(is_link)
-        self.neighbors = []
+        self._neighbors = []
 
         # Set and verify
         self.element = element
@@ -841,6 +832,14 @@ class GaussianAtom(object):
             raise ValueError('geometry must be int or int-like. '
                              'Value provided: {}'.format(value))
 
+    @property
+    def neighbors(self):
+        return self._neighbors
+
+    def add_neighbor(self, neighbor, bondorder=1.0):
+        self._neighbors.append((neighbor, bondorder))
+
+        
     #--------------------------------------
     # Helper methods
     #--------------------------------------

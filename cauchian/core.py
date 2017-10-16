@@ -13,6 +13,7 @@ import chimera
 # Own
 from pygaussian import GaussianAtom, GaussianInputFile
 from pygaussian import JOB_OPTIONS, QM_FUNCTIONALS
+from bondorder.core import assign_bond_orders
 
 
 class Controller(object):
@@ -25,7 +26,7 @@ class Controller(object):
         # Flags
         self._basis_set_dialog = None
         self._layers_dialog = None
-        
+
         # Tie everything up
         self.set_mvc()
 
@@ -38,7 +39,7 @@ class Controller(object):
             command = getattr(self, '_cmd_' + name, None)
             if command:
                 button.configure(command=command)
-        
+
         # Button actions
         buttons = ('ui_molecules', 'ui_molecules_replicas', 'ui_layers',
                    'ui_solvent_cfg', 'ui_qm_basis_per_atom', 'ui_flex_btn',
@@ -98,14 +99,14 @@ class Controller(object):
             return contents
         finally:
             self.gui.ui_preview.configure(text_state='disabled')
-    
+
     def _cmd_Copy(self, *args):
         contents = self._cmd_Preview()
         if contents:
             self.gui.uiMaster().clipboard_clear()
             self.gui.uiMaster().clipboard_append(contents)
             self.gui.status('Copied to clipboard!', blankAfter=5)
-    
+
     def _cmd_Export(self, *args):
         contents = self._cmd_Preview()
         if contents:
@@ -116,7 +117,7 @@ class Controller(object):
                 with open(path, 'w') as f:
                     f.write(contents)
                 self.gui.status('Saved to {}!'.format(path), blankAfter=5)
-    
+
     def _cmd_Close(self, *args):
         del self.model
         self.gui.Close()
@@ -224,6 +225,7 @@ class Controller(object):
         self.model._bondorder_cache.clear()
         self.model._atoms_map.clear()
 
+
 class Model(object):
 
     """
@@ -233,6 +235,7 @@ class Model(object):
     def __init__(self, gui, *args, **kwargs):
         self.gui = gui
         self._atoms_map = {}
+        self._bondorder_cache = {}
 
     def build_model_from_current_state(self, with_atoms=True, with_replicas=False):
         state = self.state
@@ -273,13 +276,13 @@ class Model(object):
             for token in tokens:
                 key, value = token.split('=')
                 infile.add_route_option(token)
-        
+
         if with_atoms:
             infile.atoms = self.process_atoms(state, connectivity=state['connectivity'])
         if with_replicas:
             infile_replicas = []
             for replica in state['replicas']:
-                replica_atoms = [self.gaussian_atom(a, n=i+1) 
+                replica_atoms = [self.gaussian_atom(a, n=i+1)
                                  for i, a in enumerate(replica.atoms)]
                 if len(replica_atoms) != len(infile.atoms):
                     raise ValueError('Replica {} has different number of atoms.'.format(replica))
@@ -287,7 +290,7 @@ class Model(object):
                 infile_replica.atoms = replica_atoms
                 infile_replicas.append(infile_replica)
             return infile_replicas
-        
+
         return infile
 
     @property
@@ -303,7 +306,7 @@ class Model(object):
         state['layers'] = self.gui._layers.copy()
         if self.gui.var_molecule_replicas.get():
             state['replicas'] = self.gui.ui_molecules_replicas.getvalue()
-                
+
         return state
 
     def gaussian_atom(self, atom, n, oniom=True, layer=None, link=None):
@@ -315,7 +318,7 @@ class Model(object):
         atom : chimera.atom
         oniom : bool, optional, default=False
             Parse additional fields to make it ONIOM-compatible.
-        
+
         Returns
         -------
         GaussianAtom
@@ -336,7 +339,7 @@ class Model(object):
             gatom.charge = getattr(atom, 'charge', None)
         self._atoms_map[atom] = gatom
         return gatom
-    
+
     def process_atoms(self, state=None, connectivity=True):
         if state is None:
             state = self.state
@@ -349,17 +352,20 @@ class Model(object):
             oniom = True
             layers = state['layers']
             if not layers:
-                raise chimera.UserError('ONIOM layers have not been defined!') 
+                raise chimera.UserError('ONIOM layers have not been defined!')
         for n, catom in enumerate(chimera_atoms):
             if oniom:
                 kw = dict(layer=layers[catom], link=None)
             gatom = self.gaussian_atom(catom, n=n+1, oniom=oniom, **kw)
             gaussian_atoms.append(gatom)
             mapping[catom] = gatom
-        
+
         if connectivity:
+            if not self._bondorder_cache.get(state['molecule']):
+                assign_bond_orders(state['molecule'])
+                self._bondorder_cache[state['molecule']] = True
             for catom, gatom in zip(chimera_atoms, gaussian_atoms):
-                for neighbor in catom.neighbors:
-                    gatom.neighbors.append(mapping[neighbor])
-        
+                for cneighbor, bond in catom.bondsMap.items():
+                    gatom.add_neighbor(mapping[cneighbor], bond.order)
+
         return gaussian_atoms
