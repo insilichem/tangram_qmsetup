@@ -550,8 +550,8 @@ class ONIOMLayersDialog(PlumeBaseDialog):
     
     def _cb_select_all(self, *args, **kwargs):
         hlist = self.ui_table.tixTable.hlist
-        hlist.selection_set(0, hlist.info_children()[-1])
-        self.ui_table.refresh()
+        for row in xrange(int(hlist.info_children()[-1])+1):
+            hlist.selection_set(row)
 
     def _cb_select_none(self, *args, **kwargs):
         self.ui_table.tixTable.hlist.selection_clear()
