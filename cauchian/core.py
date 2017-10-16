@@ -9,6 +9,7 @@ from copy import deepcopy
 from traceback import print_exc
 # Chimera stuff
 import chimera
+from chimera import UserError
 # Additional 3rd parties
 # Own
 from pygaussian import GaussianAtom, GaussianInputFile
@@ -186,13 +187,13 @@ class Controller(object):
     def _trc_job(self, *args):
         value = self.gui.var_job.get()
         options = JOB_OPTIONS.get(value)
+        self.gui.ui_job_options.clear()
         if options:
             size = len(options) * 20
             size = size if size <= 200 else 200
             self.gui.ui_job_options.component('scrolledlist').setlist(options)
             self.gui.ui_job_options.configure(scrolledlist_hull_height=len(options)*20)
         else:
-            self.gui.ui_job_options.clear()
             self.gui.ui_job_options.configure(scrolledlist_hull_height=0)
 
         if value in ('SP', 'Opt'):
