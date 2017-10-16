@@ -463,7 +463,7 @@ class GaussianInputFile(object):
             line = []
             for neighbor, bondorder in atom.neighbors:
                 if neighbor not in seen:
-                    line.append('{} {}'.format(neighbor.n, bondorder))
+                    line.append('{} {:.1f}'.format(neighbor.n, bondorder))
                     seen.add(neighbor)
             if line:
                 lines.append('{} {}'.format(atom.n, ' '.join(line)))
