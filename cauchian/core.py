@@ -362,11 +362,14 @@ class Model(object):
             mapping[catom] = gatom
 
         if connectivity:
-            if not self._bondorder_cache.get(state['molecule']):
-                assign_bond_orders(state['molecule'])
-                self._bondorder_cache[state['molecule']] = True
-            for catom, gatom in zip(chimera_atoms, gaussian_atoms):
-                for cneighbor, bond in catom.bondsMap.items():
-                    gatom.add_neighbor(mapping[cneighbor], bond.order)
+            errormsg = ('Automatic bond order perception failed. Try '
+                        'manually with Plume BondOrder extension or '
+                        'disable connectivity output.')
+            try:
+                for catom, gatom in zip(chimera_atoms, gaussian_atoms):
+                    for cneighbor, bond in catom.bondsMap.items():
+                        gatom.add_neighbor(mapping[cneighbor], bond.order)
+            except AttributeError as e:
+                raise UserError(errormsg)
 
         return gaussian_atoms
