@@ -19,6 +19,7 @@ class Controller(object):
 
     def __init__(self, gui=None, model=None, *args, **kwargs):
         self.gui = gui
+        self.gui.controller = self
         self.model = model
 
         # Flags
@@ -77,6 +78,9 @@ class Controller(object):
                 var.trace('w', command)
                 command()
 
+        # Chimera triggers
+        chimera.triggers.addHandler('Molecule', self._trg_molecule_changed, None)
+
     # Button actions start with _cmd
     def _cmd_Preview(self, *args):
         contents = ''
@@ -113,6 +117,11 @@ class Controller(object):
                     f.write(contents)
                 self.gui.status('Saved to {}!'.format(path), blankAfter=5)
     
+    def _cmd_Close(self, *args):
+        del self.model
+        self.gui.Close()
+        del self
+
     def _cmd_layers(self, *args):
         if self._layers_dialog is None:
             from gui import ONIOMLayersDialog
@@ -211,6 +220,9 @@ class Controller(object):
             self.gui.var_qm_basis_set.set('{}{}'.format(basis, ext if ext else ''))
     _trc_qm_basis_ext = _trc_qm_basis_kind
 
+    def _trg_molecule_changed(self, *args, **kwargs):
+        self.model._bondorder_cache.clear()
+        self.model._atoms_map.clear()
 
 class Model(object):
 
@@ -316,7 +328,7 @@ class Model(object):
                 raise ValueError('layer must be set if oniom is True')
             gatom.pdb_name = atom.name
             gatom.atom_type = atom.idatmType
-            gatom.geometry = chimera.idatm[gatom.idatmType].geometry
+            gatom.geometry = chimera.idatm[atom.idatmType].geometry
             gatom.residue_name = atom.residue.type
             gatom.residue_number = atom.residue.id.position
             gatom.oniom_layer = layer
