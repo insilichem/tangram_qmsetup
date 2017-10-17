@@ -9,7 +9,7 @@ from copy import deepcopy
 from traceback import print_exc
 # Chimera stuff
 import chimera
-from chimera import UserError
+from chimera.baseDialog import NotifyDialog
 # Additional 3rd parties
 # Own
 from pygaussian import GaussianAtom, GaussianInputFile
@@ -362,14 +362,20 @@ class Model(object):
             mapping[catom] = gatom
 
         if connectivity:
-            errormsg = ('Automatic bond order perception failed. Try '
-                        'manually with Plume BondOrder extension or '
-                        'disable connectivity output.')
-            try:
-                for catom, gatom in zip(chimera_atoms, gaussian_atoms):
-                    for cneighbor, bond in catom.bondsMap.items():
-                        gatom.add_neighbor(mapping[cneighbor], bond.order)
-            except AttributeError as e:
-                raise UserError(errormsg)
+            show_warning = False
+            for catom, gatom in zip(chimera_atoms, gaussian_atoms):
+                for cneighbor, bond in catom.bondsMap.items():
+                    order = getattr(bond, 'order', None)
+                    if order is None:
+                        order = 1.0
+                        show_warning = True
+                    gatom.add_neighbor(mapping[cneighbor], 1.0)
+            if show_warning:
+                errormsg = ('Some bonds did not specify bond order, so a default of 1.0 '
+                            'was used. If you want compute them or edit them manually, '
+                            'please use Plume BondOrder extension.')
+                d = NotifyDialog(errormsg, icon='warning')
+                d.OK = d.Close
+                d.enter()
 
         return gaussian_atoms
