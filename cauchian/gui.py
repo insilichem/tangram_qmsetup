@@ -532,12 +532,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
     
     def export_dialog(self):
         molecule = self.ui_molecule.getvalue()
-        rows = []
-        for row in self.ui_table.data:
-            atom = row.atom
-            layer = row.layer
-            link = row.link
-            rows.append((atom, layer, link))
+        rows = [(row.atom, row.layer, row.link) for row in self.ui_table.data]
         return molecule, rows
     
     def _cb_batch_layer_btn(self, *args, **kwargs):
@@ -550,7 +545,8 @@ class ONIOMLayersDialog(PlumeBaseDialog):
     
     def _cb_select_all(self, *args, **kwargs):
         hlist = self.ui_table.tixTable.hlist
-        for row in xrange(int(hlist.info_children()[-1])+1):
+        nrows = int(hlist.info_children()[-1])
+        for row in xrange(nrows+1):
             hlist.selection_set(row)
 
     def _cb_select_none(self, *args, **kwargs):
@@ -569,7 +565,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         rows = [self.atoms2rows.get(atom.molecule, {}).get(atom)
                 for atom in chimera.selection.currentAtoms()]
         self.ui_table.select(rows)
-    
+
     def OK(self, *args, **kwargs):
         self.layers.clear()
         molecule, rows = self.export_dialog()
