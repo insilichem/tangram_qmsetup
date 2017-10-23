@@ -78,10 +78,6 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_multiplicity_mm = tk.IntVar()
 
         # Flexibility & restraints
-        self.var_flex_policy = tk.StringVar()
-        self.var_flex_lbl = tk.StringVar()
-        self.var_flex_lbl.set('No selected atoms')
-        self.var_redundant = tk.IntVar()
         self._restraints = {}
 
         # Hardware & Output variables
@@ -135,13 +131,15 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_solvent = Pmw.OptionMenu(self.canvas, items=['Implicit', 'Explicit'], initialitem=0,
                                          menubutton_textvariable=self.var_solvent,
                                          hull_width=10)
-        self.ui_solvent_cfg = tk.Button(self.canvas, text='Configure')
+        self.ui_solvent_cfg = tk.Button(self.canvas, text='Configure', state='disabled')
+        self.ui_redundant_btn = tk.Button(self.canvas, text='Edit redundant coordinates',
+                                          state='disabled')
 
         model_grid = [['Model', self.ui_calculation, self.ui_layers],
                       ['Job', self.ui_job, self.ui_job_options],
-                      ['', self.ui_connectivity, self.ui_frequencies],
+                      [self.ui_frequencies, self.ui_connectivity, self.ui_redundant_btn],
                       ['Solvent', self.ui_solvent, self.ui_solvent_cfg]]
-        self.auto_grid(self.ui_model_frame, model_grid)
+        self.auto_grid(self.ui_model_frame, model_grid, padx=3, pady=3)
 
         # QM configuration
         self.ui_qm_frame = tk.LabelFrame(self.canvas, text='QM Settings')
@@ -183,26 +181,10 @@ class CauchianDialog(PlumeBaseDialog):
                    ['Frcmod', (self.ui_mm_frcmod, self.ui_mm_frcmod_btn)]]
         self.auto_grid(self.ui_mm_frame, mm_grid)
 
-        # Flexibility & Restraints
-        self.ui_flex_frame = tk.LabelFrame(self.canvas, text='Flexibility & Restraints')
-        self.ui_flex_policy = Pmw.OptionMenu(self.canvas, items=['flexible', 'fixed'],
-                                             initialitem=0,
-                                             menubutton_textvariable=self.var_flex_policy)
-        self.ui_flex_lbl = tk.Label(self.canvas, textvariable=self.var_flex_lbl)
-        self.ui_flex_btn = tk.Button(self.canvas, text='Configure')
-        self.ui_redundant = tk.Checkbutton(self.canvas, text='Also, apply some restraints',
-                                           variable=self.var_redundant)
-        self.ui_redundant_btn = tk.Button(self.canvas, text='Edit redundant coordinates')
-
-        flex_grid = [['All atoms are', self.ui_flex_policy],
-                     ['Except', (self.ui_flex_lbl, self.ui_flex_btn)],
-                     ['Configure restraints', self.ui_redundant_btn]]
-        self.auto_grid(self.ui_flex_frame, flex_grid, label_sep='...')
-
         # Charges & multiplicity
         self.ui_charges_frame = tk.LabelFrame(self.canvas, text='Charges & Multiplicity')
-        self.ui_charges_auto = tk.Button(self.canvas, text='Automatic')
-        self.ui_charges_manual = tk.Button(self.canvas, text='Manual')
+        self.ui_charges_auto = tk.Button(self.canvas, text='Automatic', state='disabled')
+        self.ui_charges_manual = tk.Button(self.canvas, text='Manual', state='disabled')
         self.ui_charges_qm = tk.Entry(self.canvas, textvariable=self.var_charge_qm, width=5)
         self.ui_charges_mm = tk.Entry(self.canvas, textvariable=self.var_charge_mm, width=5)
         self.ui_multiplicity_qm = tk.Entry(self.canvas, textvariable=self.var_multiplicity_qm, width=5)
@@ -239,13 +221,17 @@ class CauchianDialog(PlumeBaseDialog):
                                            text_font='Monospace')
         self.ui_preview.pack(in_=self.ui_preview_frame, expand=True, fill='both', padx=5, pady=5)
 
-        frames = [[self.ui_molecule_frame, self.ui_model_frame],
-                  [self.ui_qm_frame, self.ui_mm_frame],
-                  [self.ui_flex_frame, self.ui_charges_frame] ]
-        self.auto_grid(self.canvas, frames, resize_columns=(0,1), sticky='news')
-        self.ui_hw_frame.grid(row=len(frames), columnspan=2, sticky='ew', padx=5, pady=5)
+        self.ui_molecule_frame.grid(row=0, column=0, sticky='news', padx=5, pady=5)
+        self.ui_qm_frame.grid(row=0, column=1, columnspan=2, sticky='news', padx=5, pady=5)
+        self.ui_model_frame.grid(row=1, column=0, sticky='news', padx=5, pady=5)
+        self.ui_mm_frame.grid(row=1, column=1, sticky='news', padx=5, pady=5)
+        self.ui_charges_frame.grid(row=1, column=2, sticky='news', padx=5, pady=5)
+        self.ui_hw_frame.grid(row=2, columnspan=3, sticky='ew', padx=5, pady=5)
+        self.canvas.columnconfigure(0, weight=1)
+        self.canvas.columnconfigure(1, weight=1)
+        self.canvas.columnconfigure(2, weight=1)
         self.canvas.rowconfigure(100, weight=1)
-        self.ui_preview_frame.grid(row=100, columnspan=2, sticky='news', padx=5, pady=5)
+        self.ui_preview_frame.grid(row=100, columnspan=3, sticky='news', padx=5, pady=5)
 
     def Export(self):
         pass

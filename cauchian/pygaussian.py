@@ -1039,8 +1039,8 @@ class CustomBasisSet(object):
 
 
 def import_from_frcmod(path):
-
     pass
+
 
 if __name__ == '__main__':
     atom = GaussianAtom(element='C', coordinates=(10, 10, 10), n=1, atom_type='CT',

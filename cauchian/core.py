@@ -15,7 +15,7 @@ from chimera.baseDialog import NotifyDialog
 from pygaussian import GaussianAtom, GaussianInputFile
 from pygaussian import JOB_OPTIONS, QM_FUNCTIONALS
 try:
-from bondorder.core import assign_bond_orders
+    from bondorder.core import assign_bond_orders
 except ImportError:
     print('! Plume BondOrder not installed. Bond order perception disabled!')
     def assign_bond_orders(*args):
@@ -48,7 +48,7 @@ class Controller(object):
 
         # Button actions
         buttons = ('ui_molecules', 'ui_molecules_replicas', 'ui_layers',
-                   'ui_solvent_cfg', 'ui_qm_basis_per_atom', 'ui_flex_btn',
+                   'ui_solvent_cfg', 'ui_qm_basis_per_atom',
                    'ui_redundant_btn', 'ui_charges_auto', 'ui_charges_manual',
                    'ui_mm_frcmod_btn', 'ui_checkpoint_btn')
         for btn in buttons:
@@ -61,8 +61,7 @@ class Controller(object):
         with_callback = ('ui_job', 'ui_job_options', 'ui_calculation',
                          'ui_solvent', 'ui_qm_methods', 'ui_qm_functional_type',
                          'ui_qm_functionals', 'ui_qm_basis_kind', 'ui_qm_basis_ext',
-                         'ui_mm_forcefields', 'ui_mm_water_forcefield', 'ui_flex_policy',
-                         'ui_memory_units')
+                         'ui_mm_forcefields', 'ui_mm_water_forcefield', 'ui_memory_units')
         for name in with_callback:
             item = getattr(self.gui, name)
             command = getattr(self, '_cb' + name[2:], None)
@@ -75,8 +74,8 @@ class Controller(object):
                      'var_qm_basis_kind', 'var_qm_basis_ext',
                      'var_mm_forcefield', 'var_mm_water_forcefield',
                      'var_mm_frcmod', 'var_charge_qm', 'var_charge_mm',
-                     'var_multiplicity_qm', 'var_multiplicity_mm', 'var_flex_policy',
-                     'var_flex_lbl', 'var_title', 'var_checkpoint', 'var_checkpoint_path',
+                     'var_multiplicity_qm', 'var_multiplicity_mm', 'var_title', 
+                     'var_checkpoint', 'var_checkpoint_path',
                      'var_nproc', 'var_memory', 'var_memory_units')
         for name in variables:
             var = getattr(self.gui, name)
