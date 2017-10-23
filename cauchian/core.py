@@ -146,7 +146,7 @@ class Controller(object):
     def _cmd_checkpoint_btn(self, *args):
         path = asksaveasfilename()
         if path:
-            self.gui.var_mm_frcmod.set(path)
+            self.gui.var_checkpoint_path.set(path)
 
     # Event callbacks start with _cb
 
