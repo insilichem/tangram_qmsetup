@@ -14,7 +14,12 @@ from chimera.baseDialog import NotifyDialog
 # Own
 from pygaussian import GaussianAtom, GaussianInputFile
 from pygaussian import JOB_OPTIONS, QM_FUNCTIONALS
+try:
 from bondorder.core import assign_bond_orders
+except ImportError:
+    print('! Plume BondOrder not installed. Bond order perception disabled!')
+    def assign_bond_orders(*args):
+        pass
 
 
 class Controller(object):
