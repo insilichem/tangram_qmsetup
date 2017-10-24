@@ -23,15 +23,13 @@ from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUN
 
 
 
-def showUI(callback=None, *args, **kwargs):
+def showUI(*args, **kwargs):
     if chimera.nogui:
         tk.Tk().withdraw()
     ui = CauchianDialog(*args, **kwargs)
     model = Model(gui=ui)
     controller = Controller(gui=ui, model=model)
     ui.enter()
-    if callback:
-        ui.addCallback(callback)
 
 
 class CauchianDialog(PlumeBaseDialog):
