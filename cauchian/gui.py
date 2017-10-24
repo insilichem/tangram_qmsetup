@@ -644,8 +644,9 @@ class _SortableTableWithEntries(SortableTable):
 class ModRedundantDialog(PlumeBaseDialog):
 
     buttons = ('OK', 'Close')
+    oneshot = True
 
-    def __init__(self, restraints, *args, **kwargs):
+    def __init__(self, restraints, atoms, *args, **kwargs):
         # Fire up
         self.title = 'ModRedundant configuration'
         self.restraints = restraints
@@ -653,13 +654,15 @@ class ModRedundantDialog(PlumeBaseDialog):
         if restraints:
             self.restore_dialog(restraints)
         self.set_mvc()
+        self.atoms = {a:(i+1) for (i, a) in enumerate(atoms)}
 
     def set_mvc(self):
         self.ui_fill['command'] = self._cb_fill_selected
         self.ui_operation['command'] = self._cb_operation
         self.ui_add_btn['command'] = self._cb_add
         self.ui_table.bind_all('<Delete>', self._cb_del)
-        chimera.triggers.addHandler('selection changed', self._cb_selection_changed, None)
+        self._selection_changed_handler = chimera.triggers.addHandler('selection changed',
+            self._cb_selection_changed, None)
         self._cb_selection_changed()
 
     def fill_in_ui(self, *args):
@@ -716,6 +719,10 @@ class ModRedundantDialog(PlumeBaseDialog):
         self.restraints[:] = self.ui_table.data[:]
         super(ModRedundantDialog, self).OK()
 
+    def Close(self):
+        chimera.triggers.deleteHandler('selection changed', self._selection_changed_handler)
+        super(ModRedundantDialog, self).Close()
+
     def _cb_add(self, *args):
         atoms = []
         for field in self.ui_atoms:
@@ -742,7 +749,6 @@ class ModRedundantDialog(PlumeBaseDialog):
         Called when pressed Supr on table focus
         """
         selected = self.ui_table.selected()
-        print('Deleting rows...', selected)
         data = [row for row in self.ui_table.data if row not in selected]
         self.ui_table.setData(data)
         self.ui_table.refresh()
@@ -757,7 +763,7 @@ class ModRedundantDialog(PlumeBaseDialog):
                     atom = selected.pop(0)
                 except IndexError:
                     return
-                index = atom.serialNumber
+                index = self.atoms[atom]
                 field.setvalue(str(index))
 
     def _cb_operation(self, *args):

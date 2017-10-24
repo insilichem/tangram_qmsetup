@@ -156,7 +156,9 @@ class Controller(object):
     def _cmd_redundant_btn(self, *args):
         if self._modredundant_dialog is None:
             from gui import ModRedundantDialog
+            atoms = self.gui.ui_molecules.getvalue().atoms
             self._modredundant_dialog = ModRedundantDialog(self.gui._restraints,
+                                                           atoms,
                                                            master=self.gui.uiMaster(),
                                                            callback=self._cb_after_modredundant)
         self._modredundant_dialog.enter()
@@ -170,6 +172,7 @@ class Controller(object):
             else:
                 job_options = 'modredundant'
             self.gui.var_job_options.set(job_options)
+        self._modredundant_dialog = None
 
     # Variables are traced with _trc methods
     def _trc_molecule_replicas(self, *args):
