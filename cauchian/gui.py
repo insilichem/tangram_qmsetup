@@ -13,13 +13,13 @@ from string import ascii_letters
 import chimera
 import chimera.tkgui
 from chimera import UserError
-from chimera.baseDialog import ModelessDialog
+from chimera.baseDialog import ModelessDialog, NotifyDialog
 from chimera.widgets import MoleculeScrolledListBox, SortableTable, MoleculeOptionMenu
 # Own
 from libplume.ui import PlumeBaseDialog, STYLES
 from core import Controller, Model
 from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
-                        QM_BASIS_SETS, QM_BASIS_SETS_EXT)
+                        QM_BASIS_SETS, QM_BASIS_SETS_EXT, ModRedundantRestraint)
 
 
 
@@ -78,7 +78,7 @@ class CauchianDialog(PlumeBaseDialog):
         self.var_multiplicity_mm = tk.IntVar()
 
         # Flexibility & restraints
-        self._restraints = {}
+        self._restraints = []
 
         # Hardware & Output variables
         self.var_title = tk.StringVar()
@@ -132,8 +132,7 @@ class CauchianDialog(PlumeBaseDialog):
                                          menubutton_textvariable=self.var_solvent,
                                          hull_width=10)
         self.ui_solvent_cfg = tk.Button(self.canvas, text='Configure', state='disabled')
-        self.ui_redundant_btn = tk.Button(self.canvas, text='Edit redundant coordinates',
-                                          state='disabled')
+        self.ui_redundant_btn = tk.Button(self.canvas, text='Edit redundant coordinates')
 
         model_grid = [['Model', self.ui_calculation, self.ui_layers],
                       ['Job', self.ui_job, self.ui_job_options],
@@ -221,17 +220,18 @@ class CauchianDialog(PlumeBaseDialog):
                                            text_font='Monospace')
         self.ui_preview.pack(in_=self.ui_preview_frame, expand=True, fill='both', padx=5, pady=5)
 
-        self.ui_molecule_frame.grid(row=0, column=0, sticky='news', padx=5, pady=5)
-        self.ui_qm_frame.grid(row=0, column=1, columnspan=2, sticky='news', padx=5, pady=5)
-        self.ui_model_frame.grid(row=1, column=0, sticky='news', padx=5, pady=5)
-        self.ui_mm_frame.grid(row=1, column=1, sticky='news', padx=5, pady=5)
-        self.ui_charges_frame.grid(row=1, column=2, sticky='news', padx=5, pady=5)
+        kw = dict(sticky='news', padx=5, pady=5)
+        self.ui_molecule_frame.grid(row=0, column=0, **kw)
+        self.ui_qm_frame.grid(row=0, column=1, columnspan=2, **kw)
+        self.ui_model_frame.grid(row=1, column=0, **kw)
+        self.ui_charges_frame.grid(row=1, column=1, **kw)
+        self.ui_mm_frame.grid(row=1, column=2, **kw)
         self.ui_hw_frame.grid(row=2, columnspan=3, sticky='ew', padx=5, pady=5)
         self.canvas.columnconfigure(0, weight=1)
         self.canvas.columnconfigure(1, weight=1)
         self.canvas.columnconfigure(2, weight=1)
         self.canvas.rowconfigure(100, weight=1)
-        self.ui_preview_frame.grid(row=100, columnspan=3, sticky='news', padx=5, pady=5)
+        self.ui_preview_frame.grid(row=100, columnspan=3, **kw)
 
     def Export(self):
         pass
@@ -439,6 +439,12 @@ class BasisSetDialog(PlumeBaseDialog):
         self.ui_output.settext("")
 
 
+#############################
+#
+# ONIOM Layers
+#
+#############################
+
 class ONIOMLayersDialog(PlumeBaseDialog):
 
     """
@@ -455,7 +461,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         super(ONIOMLayersDialog, self).__init__(with_logo=False, *args, **kwargs)
         if saved_layers:
             self.restore_dialog(saved_layers['molecule'], saved_layers['atoms'])
-    
+
     def fill_in_ui(self, *args):
         self.canvas.columnconfigure(0, weight=1)
 
@@ -474,7 +480,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
                                                    validate=_SortableTableWithEntries._validate_layer)
         self.ui_batch_layer_btn = tk.Button(self.canvas, text='Set',
                                             command=self._cb_batch_layer_btn)
-        toolbar = [[self.ui_select_all, self.ui_select_none, self.ui_select_invert, 
+        toolbar = [[self.ui_select_all, self.ui_select_none, self.ui_select_invert,
                    self.ui_select_selection, (self.ui_batch_layer_entry, self.ui_batch_layer_btn)]]
         self.auto_grid(self.ui_toolbar_frame, toolbar, padx=3, pady=5, sticky='w')
 
@@ -494,7 +500,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         else:
             t.setData([])
         t.launch()
-   
+
     def populate_table(self, molecule):
         atoms = molecule.atoms
         data = []
@@ -515,12 +521,12 @@ class ONIOMLayersDialog(PlumeBaseDialog):
             row.layer = layer
             row.link = link
         self.ui_table.refresh()
-    
+
     def export_dialog(self):
         molecule = self.ui_molecule.getvalue()
         rows = [(row.atom, row.layer, row.link) for row in self.ui_table.data]
         return molecule, rows
-    
+
     def _cb_batch_layer_btn(self, *args, **kwargs):
         layer = self.ui_batch_layer_entry.get()
         selected = self.ui_table.selected()
@@ -528,7 +534,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
             row.layer = layer
         self.status('Applied layer {} to {} rows'.format(layer, len(selected)),
                     color='blue', blankAfter=3)
-    
+
     def _cb_select_all(self, *args, **kwargs):
         hlist = self.ui_table.tixTable.hlist
         nrows = int(hlist.info_children()[-1])
@@ -558,8 +564,8 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         for i, (atom, layer, link) in enumerate(rows):
             if not layer:
                 not_filledin = len([1 for row in rows[i+1:] if not row[1]])
-                raise UserError('Atom {} {} no layer defined!'.format(atom, 
-                                'and {} atoms more have'.format(not_filledin) 
+                raise UserError('Atom {} {} no layer defined!'.format(atom,
+                                'and {} atoms more have'.format(not_filledin)
                                 if not_filledin else 'has'))
             self.layers[atom] = layer
         self.Close()
@@ -583,7 +589,7 @@ class _AtomTableProxy(object):
     def __init__(self, *args, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
-        
+
         self.var_layer = tk.StringVar()
         self.var_layer.set('')
         self.var_link = tk.IntVar()
@@ -592,7 +598,7 @@ class _AtomTableProxy(object):
     @property
     def layer(self):
         return self.var_layer.get()
-    
+
     @layer.setter
     def layer(self, value):
         self.var_layer.set(value.strip().upper())
@@ -611,8 +617,8 @@ class _SortableTableWithEntries(SortableTable):
     def _createCell(self, hlist, row, col, datum, column):
         contents = column.displayValue(datum)
         if isinstance(contents, tk.StringVar):
-            entry = Pmw.EntryField(hlist, 
-                                   entry_textvariable=contents, 
+            entry = Pmw.EntryField(hlist,
+                                   entry_textvariable=contents,
                                    entry_width=3,
                                    validate=self._validate_layer,
                                    **STYLES[Pmw.EntryField])
@@ -625,5 +631,163 @@ class _SortableTableWithEntries(SortableTable):
     @staticmethod
     def _validate_layer(text):
         if text.strip().upper() in ('H', 'L', 'M', ''):
+            return Pmw.OK
+        return Pmw.PARTIAL
+
+
+#############################
+#
+# ModRedundant
+#
+#############################
+
+class ModRedundantDialog(PlumeBaseDialog):
+
+    buttons = ('OK', 'Close')
+
+    def __init__(self, restraints, *args, **kwargs):
+        # Fire up
+        self.title = 'ModRedundant configuration'
+        self.restraints = restraints
+        super(ModRedundantDialog, self).__init__(with_logo=False, *args, **kwargs)
+        if restraints:
+            self.restore_dialog(restraints)
+        self.set_mvc()
+
+    def set_mvc(self):
+        self.ui_fill['command'] = self._cb_fill_selected
+        self.ui_operation['command'] = self._cb_operation
+        self.ui_add_btn['command'] = self._cb_add
+        self.ui_table.bind_all('<Delete>', self._cb_del)
+        chimera.triggers.addHandler('selection changed', self._cb_selection_changed, None)
+        self._cb_selection_changed()
+
+    def fill_in_ui(self, *args):
+        self.canvas.columnconfigure(0, weight=1)
+        self.canvas.rowconfigure(1, weight=1)
+        row = 0
+        self.ui_add_lframe = tk.LabelFrame(self.canvas, text='Add restraint')
+        self.ui_add_lframe.grid(row=row, column=0, padx=5, pady=5, sticky='news')
+
+        self.ui_fill = tk.Button(self.canvas, text='Selected',
+                                 command=self._cb_fill_selected)
+        self.ui_atom1 = Pmw.EntryField(self.canvas, entry_width=4, labelpos='w',
+                                       validate=self._validate_atom, label_text='Atoms: ')
+        self.ui_atom2 = Pmw.EntryField(self.canvas, entry_width=4,
+                                       validate=self._validate_atom)
+        self.ui_atom3 = Pmw.EntryField(self.canvas, entry_width=4,
+                                       validate=self._validate_atom)
+        self.ui_atom4 = Pmw.EntryField(self.canvas, entry_width=4,
+                                       validate=self._validate_atom)
+        self.ui_atoms = (self.ui_atom1, self.ui_atom2, self.ui_atom3, self.ui_atom4)
+        self.ui_operation = Pmw.OptionMenu(self.canvas, items=ModRedundantRestraint.OPERATIONS,
+                                           command=self._cb_operation, labelpos='w',
+                                           label_text='Operation:')
+        self.ui_arg1 = Pmw.EntryField(self.canvas, entry_width=5, entry_state='disabled',
+                                      labelpos='w')
+        self.ui_arg2 = Pmw.EntryField(self.canvas, entry_width=5, entry_state='disabled',
+                                      labelpos='w')
+        self.ui_add_btn = tk.Button(self.canvas, text='Add', command=self._cb_add)
+        pack = (self.ui_fill, self.ui_atom1, self.ui_atom2, self.ui_atom3, self.ui_atom4,
+                self.ui_operation, self.ui_arg1, self.ui_arg2, self.ui_add_btn)
+        self.auto_pack(self.ui_add_lframe, pack, padx=3, pady=3, side='left')
+
+        row += 1
+        self.ui_table = t = SortableTable(self.canvas)
+        self.ui_table.grid(row=row, column=0, padx=5, pady=5, sticky='news')
+        kw = dict(headerPadX=5)
+        t.addColumn('Type', 'restraint_type', **kw)
+        t.addColumn('A1', 'atom1', **kw)
+        t.addColumn('A2', 'atom2', **kw)
+        t.addColumn('A3', 'atom3', **kw)
+        t.addColumn('A4', 'atom4', **kw)
+        t.addColumn('Op', 'operation', **kw)
+        t.addColumn('Args', '_args', format=lambda a: ' '.join(a), **kw)
+        t.setData([])
+        t.launch()
+
+    def restore_dialog(self, restraints):
+        self.ui_table.setData(restraints)
+
+    def export_dialog(self):
+        return self.ui_table.data[:]
+
+    def OK(self):
+        self.restraints[:] = self.ui_table.data[:]
+        super(ModRedundantDialog, self).OK()
+
+    def _cb_add(self, *args):
+        atoms = []
+        for field in self.ui_atoms:
+            value = field.getvalue()
+            if value:
+                atoms.append(value)
+        if not atoms:
+            raise UserError('Please specify at least one atom')
+        operation = self.ui_operation.getvalue()
+        if operation == 'H':
+            kw = dict(diag_elem=self.ui_arg1.getvalue())
+        elif operation == 'S':
+            kw = dict(nsteps=self.ui_arg1.getvalue(), stepsize=self.ui_arg2.getvalue())
+        else:
+            kw = {}
+        restraint = ModRedundantRestraint(atoms, operation, **kw)
+        self.ui_table.data.append(restraint)
+        self.ui_table.refresh()
+        for field in self.ui_atoms:
+            field.clear()
+
+    def _cb_del(self, *args):
+        """
+        Called when pressed Supr on table focus
+        """
+        selected = self.ui_table.selected()
+        print('Deleting rows...', selected)
+        data = [row for row in self.ui_table.data if row not in selected]
+        self.ui_table.setData(data)
+        self.ui_table.refresh()
+
+    def _cb_fill_selected(self, *args):
+        selected = chimera.selection.currentAtoms()
+        if not selected:
+            return
+        for field in self.ui_atoms:
+            if not field.getvalue():
+                try:
+                    atom = selected.pop(0)
+                except IndexError:
+                    return
+                index = atom.serialNumber
+                field.setvalue(str(index))
+
+    def _cb_operation(self, *args):
+        operation = self.ui_operation.getvalue()
+        self.ui_arg1.clear()
+        self.ui_arg2.clear()
+        if operation == 'H':
+            self.ui_arg1['entry_state'] = 'normal'
+            self.ui_arg1['label_text'] = 'Diag elem:'
+            self.ui_arg2['entry_state'] = 'disabled'
+            self.ui_arg2['label_text'] = ''
+        elif operation == 'S':
+            self.ui_arg1['entry_state'] = 'normal'
+            self.ui_arg1['label_text'] = 'Steps:'
+            self.ui_arg2['entry_state'] = 'normal'
+            self.ui_arg2['label_text'] = 'Step size:'
+        else:
+            self.ui_arg1['entry_state'] = 'disabled'
+            self.ui_arg1['label_text'] = ''
+            self.ui_arg2['entry_state'] = 'disabled'
+            self.ui_arg2['label_text'] = ''
+
+    def _cb_selection_changed(self, *args):
+        n_atoms = len(chimera.selection.currentAtoms())
+        if 1 <= n_atoms <= 4:
+            self.ui_fill['state'] = 'normal'
+        else:
+            self.ui_fill['state'] = 'disabled'
+
+    def _validate_atom(self, value):
+        if value.isdigit() or value.strip() == '*' or not value:
             return Pmw.OK
         return Pmw.PARTIAL

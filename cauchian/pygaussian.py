@@ -397,34 +397,12 @@ class GaussianInputFile(object):
     # ModRedundant restraints
     @property
     def restraints(self):
-        return self._restraints
+        return '\n'.join(map(str, self._restraints))
 
-    def add_restraint(self, restraint, atoms, min_=None, max_=None, diag_elem=None,
-                      nsteps=None, stepsize=None):
-        if restraint not in ('A', 'F', 'B', 'K', 'R', 'D', 'H', 'S'):
-            raise ValueError('Restraint {} not recognized'.format(restraint))
-        if not (1 <= len(atoms) <= 4):
-            raise ValueError('Supply between 1 and 4 atoms.')
-        if not all(isinstance(i, int) or i == '*' for i in atoms):
-            raise ValueError('Atoms must be int or *')
-
-        prefixes = ['X', 'B', 'A', 'D']
-        line = [prefixes[len(atoms) - 1]]
-        line.extend(atoms)
-        line.append(restraint)
-        if restraint == 'H':
-            if diag_elem is None:
-                raise ValueError('diag_elem must be set if restraint == H')
-            line.append(diag_elem)
-        elif restraint == 'S':
-            if None in (nsteps, stepsize):
-                raise ValueError('nsteps and stepsize must be set if restraint == S')
-            line.extend([nsteps, stepsize])
-        if max_ is not None:
-            if min_ is not None:
-                line.append(min_)
-            line.append(max_)
-        self._restraints.append(' '.join(map(str, line)))
+    def add_restraint(self, restraint):
+        if self.job != 'Opt':
+            raise ValueError('Restraints (ModRedundant) can only be set with job=Opt')
+        self._restraints.append(restraint)
 
     @property
     def charge(self):
@@ -467,9 +445,9 @@ class GaussianInputFile(object):
                     seen.add(neighbor)
             if line:
                 lines.append('{} {}'.format(atom.n, ' '.join(line)))
-            
+
         return '\n'.join(lines)
-                
+
 
 class GaussianAtom(object):
 
@@ -768,7 +746,7 @@ class GaussianAtom(object):
         if value.upper() in ('H', 'M', 'L'):
             self._oniom_layer = value.upper()
             return
-        raise ValueError('oniom_layer must be H, M, or L. ' 
+        raise ValueError('oniom_layer must be H, M, or L. '
                          'Value provided: {}'.format(value))
 
     @property
@@ -839,7 +817,7 @@ class GaussianAtom(object):
     def add_neighbor(self, neighbor, bondorder=1.0):
         self._neighbors.append((neighbor, bondorder))
 
-        
+
     #--------------------------------------
     # Helper methods
     #--------------------------------------
@@ -1036,6 +1014,94 @@ class CustomBasisSet(object):
         else:
             # prepend a '-' to each element to prevent Gaussian errors if atom not present in system
             return '\n'.join([b.replace('****\n', '****\n-') for b in basis])
+
+
+
+class ModRedundantRestraint(object):
+
+    TYPES = {1: 'X', 2: 'B', 3: 'A', 4: 'D'}
+    OPERATIONS = sorted('A F B K R D H S'.split())
+
+    def __init__(self, atoms, operation, diag_elem=None, nsteps=None, stepsize=None,
+                 rtype=None, min_=None, max_=None):
+        if not (1 <= len(atoms) <= 4):
+            raise ValueError('Provide between 1 and 4 atoms or wildcards (*).')
+        if not all(a.isdigit() or a.strip() in ('', '*') for a in atoms):
+            raise ValueError('atoms must be int or *')
+        if operation not in self.OPERATIONS:
+            raise ValueError('operation must be one of <A F B K R D H S>')
+        if operation == 'S' and None in (nsteps, stepsize):
+            raise ValueError('if operation=S, nsteps and stepsize must be set')
+        if operation == 'H' and diag_elem is None:
+            raise ValueError('if operation=H, diag_elemt must be set')
+
+        self.atoms = [a.strip() for a in atoms if a.strip()]
+        self.operation = operation
+        self.diag_elem = diag_elem
+        self.nsteps = nsteps
+        self.stepsize = stepsize
+        self.rtype = rtype
+        self.min_ = min_
+        self.max_ = max_
+
+    def __str__(self):
+        kwargs = dict(rtype=self.restraint_type,
+                      atoms=' '.join(map(str, self.atoms)),
+                      operation=self.operation,
+                      args=' '.join(map(str, self._args)),
+                      minmax=' '.join(map(str, self._args)))
+        return '{rtype} {atoms} {operation} {args}'.format(**kwargs)
+
+    @property
+    def restraint_type(self):
+        if self.rtype is not None:
+            return self.rtype
+        return self.TYPES[len(self.atoms)]
+
+    @property
+    def minmax(self):
+        s = []
+        if self.max_ is not None:
+            if self.min_ is not None:
+                return self.min_, self.max_
+            return self.max_,
+
+    @property
+    def _args(self):
+        if self.operation == 'S':
+            return self.nsteps, self.stepsize
+        elif self.operation == 'H':
+            return self.diag_elem,
+        else:
+            return ()
+
+    @property
+    def atom1(self):
+        try:
+            return self.atoms[0]
+        except IndexError:
+            return ''
+
+    @property
+    def atom2(self):
+        try:
+            return self.atoms[1]
+        except IndexError:
+            return ''
+
+    @property
+    def atom3(self):
+        try:
+            return self.atoms[2]
+        except IndexError:
+            return ''
+
+    @property
+    def atom4(self):
+        try:
+            return self.atoms[3]
+        except IndexError:
+            return ''
 
 
 def import_from_frcmod(path):

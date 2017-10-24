@@ -32,6 +32,7 @@ class Controller(object):
         # Flags
         self._basis_set_dialog = None
         self._layers_dialog = None
+        self._modredundant_dialog = None
 
         # Tie everything up
         self.set_mvc()
@@ -74,7 +75,7 @@ class Controller(object):
                      'var_qm_basis_kind', 'var_qm_basis_ext',
                      'var_mm_forcefield', 'var_mm_water_forcefield',
                      'var_mm_frcmod', 'var_charge_qm', 'var_charge_mm',
-                     'var_multiplicity_qm', 'var_multiplicity_mm', 'var_title', 
+                     'var_multiplicity_qm', 'var_multiplicity_mm', 'var_title',
                      'var_checkpoint', 'var_checkpoint_path',
                      'var_nproc', 'var_memory', 'var_memory_units')
         for name in variables:
@@ -152,7 +153,23 @@ class Controller(object):
         if path:
             self.gui.var_checkpoint_path.set(path)
 
+    def _cmd_redundant_btn(self, *args):
+        if self._modredundant_dialog is None:
+            from gui import ModRedundantDialog
+            self._modredundant_dialog = ModRedundantDialog(self.gui._restraints,
+                                                           master=self.gui.uiMaster(),
+                                                           callback=self._cb_after_modredundant)
+        self._modredundant_dialog.enter()
+
     # Event callbacks start with _cb
+    def _cb_after_modredundant(self):
+        job_options = self.gui.var_job_options.get()
+        if self.gui._restraints and 'modredundant' not in job_options:
+            if job_options:
+                job_options += ',modredundant'
+            else:
+                job_options = 'modredundant'
+            self.gui.var_job_options.set(job_options)
 
     # Variables are traced with _trc methods
     def _trc_molecule_replicas(self, *args):
@@ -199,6 +216,11 @@ class Controller(object):
             self.gui.ui_job_options.configure(scrolledlist_hull_height=len(options)*20)
         else:
             self.gui.ui_job_options.configure(scrolledlist_hull_height=0)
+
+        if value == 'Opt':
+            self.gui.ui_redundant_btn['state'] = 'normal'
+        else:
+            self.gui.ui_redundant_btn['state'] = 'disabled'
 
         if value in ('SP', 'Opt'):
             self.gui.ui_frequencies.configure(state='normal')
@@ -306,7 +328,7 @@ class Model(object):
                 state[attr[4:]] = getattr(self.gui, attr).get()
 
         state['qm_basis_set_extra'] = self.gui._qm_basis_extra.copy()
-        state['restraints'] = self.gui._restraints.copy()
+        state['restraints'] = self.gui._restraints[:]
         state['molecule'] = self.gui.ui_molecules.getvalue()
         state['layers'] = self.gui._layers.copy()
         if self.gui.var_molecule_replicas.get():
