@@ -492,7 +492,6 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         t.addColumn('Element', 'element', headerPadX=5, **kw)
         t.addColumn('Type', 'idatmtype', format=str, headerPadX=5, **kw)
         t.addColumn('Layer', 'var_layer', format=lambda a: a, headerPadX=5, **kw)
-        t.addColumn('Link', 'link', format=bool, headerPadX=5, **kw)
         if self.ui_molecule.getvalue():
             self.ui_molecule.invoke()
         else:
@@ -514,15 +513,14 @@ class ONIOMLayersDialog(PlumeBaseDialog):
 
     def restore_dialog(self, molecule, rows):
         self.ui_molecule_dropdown.set(molecule)
-        for atom, layer, link in rows:
+        for atom, layer in rows:
             row = self.atoms2rows[atom]
             row.layer = layer
-            row.link = link
         self.ui_table.refresh()
 
     def export_dialog(self):
         molecule = self.ui_molecule.getvalue()
-        rows = [(row.atom, row.layer, row.link) for row in self.ui_table.data]
+        rows = [(row.atom, row.layer) for row in self.ui_table.data]
         return molecule, rows
 
     def _cb_batch_layer_btn(self, *args, **kwargs):
@@ -559,7 +557,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
     def OK(self, *args, **kwargs):
         self.layers.clear()
         molecule, rows = self.export_dialog()
-        for i, (atom, layer, link) in enumerate(rows):
+        for i, (atom, layer) in enumerate(rows):
             if not layer:
                 not_filledin = len([1 for row in rows[i+1:] if not row[1]])
                 raise UserError('Atom {} {} no layer defined!'.format(atom,
@@ -580,8 +578,6 @@ class _AtomTableProxy(object):
     element=atom.element.name
     residue=str(atom.residue)
     serial=atom.serialNumber
-    var_layer=tk.StringVar
-    var_link=tk.IntVar
     """
 
     def __init__(self, *args, **kwargs):
@@ -590,8 +586,6 @@ class _AtomTableProxy(object):
 
         self.var_layer = tk.StringVar()
         self.var_layer.set('')
-        self.var_link = tk.IntVar()
-        self.var_link.set(0)
 
     @property
     def layer(self):
@@ -600,14 +594,6 @@ class _AtomTableProxy(object):
     @layer.setter
     def layer(self, value):
         self.var_layer.set(value.strip().upper())
-
-    @property
-    def link(self):
-        return bool(self.var_link.get())
-
-    @link.setter
-    def link(self, value, *args, **kwargs):
-        self.var_link.set(value)
 
 
 class _SortableTableWithEntries(SortableTable):

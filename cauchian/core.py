@@ -254,6 +254,7 @@ class Controller(object):
     def _trg_molecule_changed(self, *args, **kwargs):
         self.model._bondorder_cache.clear()
         self.model._atoms_map.clear()
+        self.gui._layers.clear()
 
 
 class Model(object):
@@ -308,7 +309,7 @@ class Model(object):
                 infile.add_route_option(token)
 
         if with_atoms:
-            infile.atoms = self.process_atoms(state, connectivity=state['connectivity'])
+            infile.atoms = self.process_atoms(state)
         if with_replicas:
             infile_replicas = []
             for replica in state['replicas']:
@@ -361,7 +362,9 @@ class Model(object):
                 raise ValueError('layer must be set if oniom is True')
             gatom.pdb_name = atom.name
             gatom.atom_type = atom.idatmType
-            gatom.geometry = chimera.idatm[atom.idatmType].geometry
+            geometry = chimera.idatm.typeInfo.get(atom.idatmType)
+            if geometry is not None:
+                gatom.geometry = geometry.geometry
             gatom.residue_name = atom.residue.type
             gatom.residue_number = atom.residue.id.position
             gatom.oniom_layer = layer
@@ -370,13 +373,13 @@ class Model(object):
         self._atoms_map[atom] = gatom
         return gatom
 
-    def process_atoms(self, state=None, connectivity=True):
+    def process_atoms(self, state=None):
         if state is None:
             state = self.state
         gaussian_atoms = []
         chimera_atoms = state['molecule'].atoms
         mapping = {}
-        oniom, kw = False, {}
+        oniom, kw, layers = False, {}, {}
 
         if state['calculation'] == 'ONIOM':  # we have layers to deal with!
             oniom = True
@@ -384,27 +387,25 @@ class Model(object):
             if not layers:
                 raise chimera.UserError('ONIOM layers have not been defined!')
         for n, catom in enumerate(chimera_atoms):
-            if oniom:
-                kw = dict(layer=layers[catom], link=None)
-            gatom = self.gaussian_atom(catom, n=n+1, oniom=oniom, **kw)
+            kw = dict(oniom=oniom,layer=layers.get(catom), link=None)
+            gatom = self.gaussian_atom(catom, n=n+1, **kw)
             gaussian_atoms.append(gatom)
             mapping[catom] = gatom
 
-        if connectivity:
-            show_warning = False
-            for catom, gatom in zip(chimera_atoms, gaussian_atoms):
-                for cneighbor, bond in catom.bondsMap.items():
-                    order = getattr(bond, 'order', None)
-                    if order is None:
-                        order = 1.0
-                        show_warning = True
-                    gatom.add_neighbor(mapping[cneighbor], 1.0)
-            if show_warning:
-                errormsg = ('Some bonds did not specify bond order, so a default of 1.0 '
-                            'was used. If you want compute them or edit them manually, '
-                            'please use Plume BondOrder extension.')
-                d = NotifyDialog(errormsg, icon='warning')
-                d.OK = d.Close
-                d.enter()
+        show_warning = False
+        for catom, gatom in zip(chimera_atoms, gaussian_atoms):
+            for cneighbor, bond in catom.bondsMap.items():
+                order = getattr(bond, 'order', None)
+                # if order is None:
+                #     order = 1.0
+                #     show_warning = False
+                gatom.add_neighbor(mapping[cneighbor], order)
+        if show_warning:
+            errormsg = ('Some bonds did not specify bond order, so a default of 1.0 '
+                        'was used. If you want compute them or edit them manually, '
+                        'please use Plume BondOrder extension.')
+            d = NotifyDialog(errormsg, icon='warning')
+            d.OK = d.Close
+            d.enter()
 
         return gaussian_atoms

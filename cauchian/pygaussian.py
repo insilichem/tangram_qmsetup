@@ -377,13 +377,14 @@ class GaussianInputFile(object):
             raise ValueError('System does not contain any atoms! Use .add_atom()!')
         if len(self._atoms) > 250000:
             raise ValueError('Max number of atoms is 250 000.')
+        if self.mm_forcefield:  # using ONIOM!
+            self._compute_oniom_links(self._atoms)
         return self._atoms
 
     @atoms.setter
     def atoms(self, value):
-        if value:
-            for a in value:
-                self.add_atom(atom=a)
+        for a in value:
+            self.add_atom(atom=a)
 
     def add_atom(self, atom=None, *args, **kwargs):
         if atom is None:
@@ -448,6 +449,24 @@ class GaussianInputFile(object):
 
         return '\n'.join(lines)
 
+    @staticmethod
+    def _compute_oniom_links(atoms):
+        by_layers = defaultdict(list)
+        linked = set()
+        for atom in atoms:
+            atom_layer = atom.oniom_layer
+            can_be_link = []
+            for neighbor, order in atom.neighbors:
+                if neighbor.oniom_layer != atom_layer:
+                    can_be_link.append(neighbor)
+            n_links = len(can_be_link)
+            if n_links == 1:
+                atom.oniom_link = can_be_link[0]
+                can_be_link[0].oniom_link = atom
+            elif n_links > 1:
+                raise ValueError('Atom {} can only have one layer link. Found: {}'.format(
+                    atom.atom_spec, ', '.join([a.atom_spec for a in can_be_link])))
+
 
 class GaussianAtom(object):
 
@@ -463,7 +482,7 @@ class GaussianAtom(object):
                  residue_number=None, residue_name=None, pdb_name=None, fragment=None,
                  iso=None, spin=None, zeff=None, qmom=None, nmagm=None, znuc=None,
                  oniom_layer=None, oniom_link=None, oniom_bonded=None, is_link=False,
-                 geometry=None):
+                 oniom_scale_factors=None, geometry=None):
         self.n = n
         self._element = None
         self._coordinates = None
@@ -483,6 +502,7 @@ class GaussianAtom(object):
         self._oniom_layer = None
         self._oniom_link = None
         self._oniom_bonded = None
+        self._oniom_scale_factors = None
         self._geometry = None
         self.is_link = bool(is_link)
         self._neighbors = []
@@ -505,6 +525,8 @@ class GaussianAtom(object):
         self.znuc = znuc
         self.oniom_layer = oniom_layer
         self.oniom_link = oniom_link
+        self.oniom_bonded = oniom_bonded
+        self.oniom_scale_factors = oniom_scale_factors
         self.geometry = geometry
 
     @property
@@ -606,10 +628,10 @@ class GaussianAtom(object):
 
     @residue_name.setter
     def residue_name(self, value):
-        if value is None:
+        if not value:
             self._residue_name = None
             return
-        if isinstance(value, basestring) and value and value[0] in ascii_letters:
+        if isinstance(value, basestring):
             self._residue_name = value
             return
         raise ValueError('residue_name cannot be empty and must start with a letter. '
@@ -755,12 +777,11 @@ class GaussianAtom(object):
 
     @oniom_link.setter
     def oniom_link(self, value):
-        if value is None:
-            self._oniom_link = None
+        if isinstance(value, GaussianAtom) or value is None:
+            self._oniom_link = value
             return
-        if not isinstance(value, GaussianAtom):
-            raise ValueError('oniom_link must be a GaussianAtom instance. '
-                             'Value provided: {}'.format(value))
+        raise ValueError('oniom_link must be a GaussianAtom instance. '
+                            'Value provided: {}'.format(value))
 
     @property
     def oniom_bonded(self):
@@ -805,7 +826,7 @@ class GaussianAtom(object):
             self._geometry = value
             return
         try:
-            self.geometry = int(value)
+            self._geometry = int(value)
         except (ValueError, TypeError):
             raise ValueError('geometry must be int or int-like. '
                              'Value provided: {}'.format(value))
@@ -901,11 +922,11 @@ class GaussianAtom(object):
             line.append(' {}'.format(self.oniom_layer))
         link = self.oniom_link
         if link:
-            line.append(' {}'.format(link.atom_spec))
+            line.append(' {}'.format(link.n))
             if link.oniom_bonded:
                 line.append(' {}'.format(link.oniom_bonded))
             if link.oniom_scale_factors:
-                line.append(' {}'.format(' '.join(link.scale_factors)))
+                line.append(' {}'.format(' '.join(link.oniom_scale_factors)))
 
         return ''.join(map(str, line))
 
