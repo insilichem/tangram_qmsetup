@@ -6,8 +6,14 @@ import conversion
 import glob
 import json
 import os
-import sqlite3
 import sys
+
+here = os.path.abspath(os.path.dirname(__file__))
+print(here)
+if not os.path.isfile(os.path.join(here, '..', '_sqlite3.so')):
+    os.symlink(os.path.join(here, '_sqlite3.so'), os.path.join(here, '..', '_sqlite3.so'))
+
+import sqlite3
 
 def checkSQLite3(db_path, fmt):
     # Check if db file is readable
@@ -269,7 +275,7 @@ class EMSL_local(object):
         library.
 
         http://www.gaussian.com/g_tech/g_ur/m_basis_sets.htm
-        
+
 
         @param basis_name: name of the basis set to test
         @type basis_name : str
@@ -432,7 +438,7 @@ class EMSL_local(object):
                         names.append(t)
 
         return names
-    
+
     def get_available_basis_sets(self, elements=[], allowed_basis_names=[]):
         """Return all the basis set names that contain the specified elements.
          If elements is empty, just get all basis set names.

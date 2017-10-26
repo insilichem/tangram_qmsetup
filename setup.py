@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
 from setuptools import setup, find_packages
 import os
 import io
@@ -28,7 +29,7 @@ setup(
     description=long_description,
     long_description=long_description,
     packages=find_packages(),
-    package_data={'ebsel': ['db/*.db']},
+    package_data={'ebsel': ['db/*.db', '*.dat', '_sqlite3.so']},
     include_package_data=True,
     platforms='any',
     classifiers=[
