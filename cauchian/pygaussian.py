@@ -402,7 +402,8 @@ class GaussianInputFile(object):
     # ModRedundant restraints
     @property
     def restraints(self):
-        return '\n'.join(map(str, self._restraints))
+        restraints = sorted(self._restraints, key=lambda r: len(r.atoms), reverse=True)
+        return '\n'.join(map(str, restraints))
 
     def add_restraint(self, restraint):
         if self.job != 'Opt':
