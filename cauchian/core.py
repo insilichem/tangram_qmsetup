@@ -48,10 +48,8 @@ class Controller(object):
                 button.configure(command=command)
 
         # Button actions
-        buttons = ('ui_molecules', 'ui_molecules_replicas', 'ui_layers',
-                   'ui_solvent_cfg', 'ui_qm_basis_per_atom',
-                   'ui_redundant_btn', 'ui_charges_auto', 'ui_charges_manual',
-                   'ui_mm_frcmod_btn', 'ui_checkpoint_btn')
+        buttons = ('ui_molecules', 'ui_layers', 'ui_solvent_btn', 'ui_qm_basis_per_atom',
+                   'ui_redundant_btn', 'ui_mm_frcmod_btn', 'ui_checkpoint_btn')
         for btn in buttons:
             button = getattr(self.gui, btn)
             command = getattr(self, '_cmd' + btn[2:], None)
@@ -60,7 +58,7 @@ class Controller(object):
 
         # Event callbacks & variable tracing
         with_callback = ('ui_job', 'ui_job_options', 'ui_calculation',
-                         'ui_solvent', 'ui_qm_methods', 'ui_qm_functional_type',
+                         'ui_qm_methods', 'ui_qm_functional_type',
                          'ui_qm_functionals', 'ui_qm_basis_kind', 'ui_qm_basis_ext',
                          'ui_mm_forcefields', 'ui_mm_water_forcefield', 'ui_memory_units')
         for name in with_callback:
@@ -69,8 +67,8 @@ class Controller(object):
             if command:
                 item.configure(command=command)
 
-        variables = ('var_molecule_replicas', 'var_job', 'var_job_options', 'var_frequencies',
-                     'var_calculation', 'var_solvent', 'var_qm_method',
+        variables = ('var_molecule_replicas', 'var_job', 'var_job_options',
+                     'var_calculation', 'var_qm_method',
                      'var_qm_functional', 'var_qm_functional_type', 'var_qm_basis_set',
                      'var_qm_basis_kind', 'var_qm_basis_ext',
                      'var_mm_forcefield', 'var_mm_water_forcefield',
@@ -156,9 +154,11 @@ class Controller(object):
     def _cmd_redundant_btn(self, *args):
         if self._modredundant_dialog is None:
             from gui import ModRedundantDialog
-            atoms = self.gui.ui_molecules.getvalue().atoms
+            molecule = self.gui.ui_molecules.getvalue()
+            if molecule is None:
+                raise chimera.UserError('No molecule selected!')
             self._modredundant_dialog = ModRedundantDialog(self.gui._restraints,
-                                                           atoms,
+                                                           molecule.atoms,
                                                            master=self.gui.uiMaster(),
                                                            callback=self._cb_after_modredundant)
         self._modredundant_dialog.enter()
@@ -175,12 +175,6 @@ class Controller(object):
         self._modredundant_dialog = None
 
     # Variables are traced with _trc methods
-    def _trc_molecule_replicas(self, *args):
-        if self.gui.var_molecule_replicas.get():
-            self.gui.ui_molecules_replicas.configure(listbox_state='normal')
-        else:
-            self.gui.ui_molecules_replicas.configure(listbox_state='disabled')
-
     def _trc_calculation(self, *args):
         value = self.gui.var_calculation.get()
         if value == 'ONIOM':
@@ -225,12 +219,6 @@ class Controller(object):
         else:
             self.gui.ui_redundant_btn['state'] = 'disabled'
 
-        if value in ('SP', 'Opt'):
-            self.gui.ui_frequencies.configure(state='normal')
-        else:
-            self.gui.var_frequencies.set(0)
-            self.gui.ui_frequencies.configure(state='disabled')
-
     def _trc_qm_method(self, *args):
         value = self.gui.var_qm_method.get()
         if value == 'DFT':
@@ -268,7 +256,7 @@ class Model(object):
         self._atoms_map = {}
         self._bondorder_cache = {}
 
-    def build_model_from_current_state(self, with_atoms=True, with_replicas=False):
+    def build_model_from_current_state(self, with_atoms=True):
         state = self.state
         self._atoms_map.clear()
         kwargs = dict(
@@ -281,24 +269,24 @@ class Model(object):
         infile = GaussianInputFile(**kwargs)
         infile.job = state['job']
         infile.job_options = state['job_options']
-        infile.frequencies = bool(state['frequencies'])
         infile.qm_method = state['qm_method']
         infile.qm_basis_set = state['qm_basis_set']
+        infile.charge = state['charge_qm']
+        infile.multiplicity = state['multiplicity_qm']
         if state['qm_method'] == 'DFT':
             infile.qm_functional = state['qm_functional']
         if state['qm_basis_set_extra']:
             for element, bs in state['qm_basis_set_extra'].items():
                 infile.add_extra_basis_set(bs, element)
         if state['calculation'] == 'ONIOM':  # enter MM details
-            infile.charge = state['charge_qm'] + state['charge_mm']
-            infile.multiplicity = state['multiplicity_qm'] + state['multiplicity_mm']
             infile.mm_forcefield = state['mm_forcefield']
             infile.mm_water_forcefield = state['mm_water_forcefield']
             if state['mm_frcmod']:
                 infile.add_mm_forcefield(state['mm_frcmod'])
-        else:  # QM only details
-            infile.charge = state['charge_qm']
-            infile.multiplicity = state['multiplicity_qm']
+            if state['charge_mm']:
+                infile.mm_charge = int(state['charge_mm'])
+            if state['multiplicity_mm']:
+                infile.mm_multiplicity = int(state['multiplicity_mm'])
         if state['restraints']:
             for restraint in state['restraints']:
                 infile.add_restraint(restraint)
@@ -310,17 +298,17 @@ class Model(object):
 
         if with_atoms:
             infile.atoms = self.process_atoms(state)
-        if with_replicas:
-            infile_replicas = []
-            for replica in state['replicas']:
-                replica_atoms = [self.gaussian_atom(a, n=i+1)
-                                 for i, a in enumerate(replica.atoms)]
-                if len(replica_atoms) != len(infile.atoms):
-                    raise ValueError('Replica {} has different number of atoms.'.format(replica))
-                infile_replica = deepcopy(infile)
-                infile_replica.atoms = replica_atoms
-                infile_replicas.append(infile_replica)
-            return infile_replicas
+            if state['replicas']:
+                replicas = [infile]
+                for index, coordset in state['molecule'].coordSets():
+                    if coordset is state['molecule'].activeCoordSet:
+                        continue
+                    replica = deepcopy(infile)
+                    replica.title += ' - Replica {}'.format(index)
+                    for atom, coord in zip(replica.atoms, coordset.xyzArray()):
+                        atom.coordinates = coord.data()
+                    replicas.append(replica)
+                return replicas
 
         return infile
 
@@ -335,8 +323,7 @@ class Model(object):
         state['restraints'] = self.gui._restraints[:]
         state['molecule'] = self.gui.ui_molecules.getvalue()
         state['layers'] = self.gui._layers.copy()
-        if self.gui.var_molecule_replicas.get():
-            state['replicas'] = self.gui.ui_molecules_replicas.getvalue()
+        state['replicas'] = self.gui.var_molecule_replicas.get()
 
         return state
 

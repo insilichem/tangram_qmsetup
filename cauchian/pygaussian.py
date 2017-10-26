@@ -92,7 +92,9 @@ class GaussianInputFile(object):
         self._link = {}
         self._job = None
         self._charge = None
+        self._mm_charge = None
         self._multiplicity = None
+        self._mm_multiplicity = None
         self._qm_method = None
         self._qm_functional = None
         self._qm_basis_set = None
@@ -368,8 +370,10 @@ class GaussianInputFile(object):
     # System
     @property
     def system(self):
-        return '\n'.join(['{} {}'.format(self.charge, self.multiplicity)] +
-                         map(str, self.atoms))
+        first_line = '{} {}'.format(self.charge, self.multiplicity)
+        if self.mm_forcefield and None not in (self.mm_charge, self.mm_multiplicity):
+            first_line += ' {} {}'.format(self.mm_charge, self.mm_multiplicity)
+        return '\n'.join([first_line] + map(str, self.atoms))
 
     @property
     def atoms(self):
@@ -427,6 +431,22 @@ class GaussianInputFile(object):
     def multiplicity(self, value):
         self._multiplicity = value
 
+    @property
+    def mm_charge(self):
+        return self._mm_charge
+
+    @mm_charge.setter
+    def mm_charge(self, value):
+        self._mm_charge = value
+
+    @property
+    def mm_multiplicity(self):
+        return self._mm_multiplicity
+
+    @mm_multiplicity.setter
+    def mm_multiplicity(self, value):
+        self._mm_multiplicity = value
+
     ###########################
     def compute_charge(self):
         if self._atoms:
@@ -441,7 +461,7 @@ class GaussianInputFile(object):
             seen.add(atom)
             line = []
             for neighbor, bondorder in atom.neighbors:
-                if neighbor not in seen:
+                if neighbor not in seen and bondorder is not None:
                     line.append('{} {:.1f}'.format(neighbor.n, bondorder))
                     seen.add(neighbor)
             if line:
@@ -549,10 +569,6 @@ class GaussianAtom(object):
 
     @coordinates.setter
     def coordinates(self, value):
-        if value is None:
-            if self.is_link:
-                self._coordinates = None
-                return
         try:
             if len(value) == 3:
                 self._coordinates = tuple(float(v) for v in value)
@@ -560,7 +576,7 @@ class GaussianAtom(object):
         except (ValueError, TypeError):
             pass
         raise ValueError('Coordinates must be 3-tuple of float (x, y, z). '
-                         'Value provided: {}'.format(value))
+                            'Value provided: {}'.format(value))
 
     @property
     def atom_type(self):
