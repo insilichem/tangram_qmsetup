@@ -7,6 +7,7 @@ from __future__ import print_function, division
 from tkFileDialog import askopenfilename, asksaveasfilename
 from copy import deepcopy
 from traceback import print_exc
+import os
 # Chimera stuff
 import chimera
 from chimera.baseDialog import NotifyDialog
@@ -48,7 +49,7 @@ class Controller(object):
                 button.configure(command=command)
 
         # Button actions
-        buttons = ('ui_molecules', 'ui_layers', 'ui_solvent_btn', 'ui_qm_basis_per_atom',
+        buttons = ('ui_layers', 'ui_solvent_btn', 'ui_qm_basis_per_atom',
                    'ui_redundant_btn', 'ui_mm_frcmod_btn', 'ui_checkpoint_btn')
         for btn in buttons:
             button = getattr(self.gui, btn)
@@ -83,6 +84,9 @@ class Controller(object):
                 var.trace('w', command)
                 command()
 
+        # Custom widgets with other callback keywords
+        self.gui.ui_molecules['selectioncommand'] = self._cmd_molecules
+
         # Chimera triggers
         chimera.triggers.addHandler('Molecule', self._trg_molecule_changed, None)
 
@@ -92,7 +96,7 @@ class Controller(object):
         self.gui.ui_preview.configure(text_state='normal')
         self.gui.ui_preview.clear()
         try:
-            current_file = self.model.build_model_from_current_state()
+            current_file = self.model.build_model_from_current_state(with_replicas=False)[0]
             contents = current_file.build(timestamp=True)
         except Exception as e:
             self.gui.status('Could not preview file due to {}: {}'.format(type(e).__name__,
@@ -112,20 +116,39 @@ class Controller(object):
             self.gui.status('Copied to clipboard!', blankAfter=5)
 
     def _cmd_Export(self, *args):
-        contents = self._cmd_Preview()
-        if contents:
-            path = asksaveasfilename(title='Choose destination (.com)',
-                                     filetypes=[('Gaussian input', '*.com'), ('All', '*')],
-                                     defaultextension='.com')
-            if path:
-                with open(path, 'w') as f:
-                    f.write(contents)
-                self.gui.status('Saved to {}!'.format(path), blankAfter=5)
+        gfiles = self.model.build_model_from_current_state()
+        try:
+            contents = gfiles[0].build(timestamp=True)
+        except:
+            contents = ''
+        if not contents:
+            self.gui.status('Export failed! Check current config.', color='red', blankAfter=5)
+            return
+        path = asksaveasfilename(title='Choose destination (.com)',
+                                 filetypes=[('Gaussian input', '*.com'), ('All', '*')],
+                                 defaultextension='.com')
+        if not path:
+            return
+        fn, ext = os.path.splitext(path)
+        for i, gfile in enumerate(gfiles):
+            outpath = '{fn}{i}{ext}'.format(fn=fn, i=i if i else '', ext=ext)
+            with open(outpath, 'w') as f:
+                contents = gfile.build(timestamp=True)
+                f.write(contents)
+        self.gui.status('Saved {} to {}!'.format(len(gfiles), path), blankAfter=5)
 
     def _cmd_Close(self, *args):
         del self.model
         self.gui.Close()
         del self
+
+    def _cmd_molecules(self, *args):
+        m = self.gui.ui_molecules.getvalue()
+        if len(m.coordSets) > 1:
+            self.gui.ui_replicas_chk['state'] = 'normal'
+        else:
+            self.gui.ui_replicas_chk['state'] = 'disabled'
+            self.gui.var_molecule_replicas.set(0)
 
     def _cmd_layers(self, *args):
         if self._layers_dialog is None:
@@ -256,7 +279,7 @@ class Model(object):
         self._atoms_map = {}
         self._bondorder_cache = {}
 
-    def build_model_from_current_state(self, with_atoms=True):
+    def build_model_from_current_state(self, with_atoms=True, with_replicas=True):
         state = self.state
         self._atoms_map.clear()
         kwargs = dict(
@@ -296,10 +319,10 @@ class Model(object):
                 key, value = token.split('=')
                 infile.add_route_option(token)
 
+        replicas = [infile]
         if with_atoms:
             infile.atoms = self.process_atoms(state)
-            if state['replicas']:
-                replicas = [infile]
+            if with_replicas and state['replicas']:
                 for index, coordset in state['molecule'].coordSets():
                     if coordset is state['molecule'].activeCoordSet:
                         continue
@@ -308,9 +331,8 @@ class Model(object):
                     for atom, coord in zip(replica.atoms, coordset.xyzArray()):
                         atom.coordinates = coord.data()
                     replicas.append(replica)
-                return replicas
 
-        return infile
+        return replicas
 
     @property
     def state(self):
