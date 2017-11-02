@@ -5,9 +5,10 @@
 from __future__ import print_function, division
 # Python stdlib
 from tkFileDialog import askopenfilename, asksaveasfilename
-from copy import copy, deepcopy
+from copy import copy
 from traceback import print_exc
 import os
+import json
 # Chimera stuff
 import chimera
 from chimera.baseDialog import NotifyDialog
@@ -89,6 +90,7 @@ class Controller(object):
 
         # Chimera triggers
         chimera.triggers.addHandler('Molecule', self._trg_molecule_changed, None)
+        self._cmd_molecules()
 
     # Button actions start with _cmd
     def _cmd_Preview(self, *args):
@@ -116,6 +118,7 @@ class Controller(object):
             self.gui.status('Copied to clipboard!', blankAfter=5)
 
     def _cmd_Export(self, *args):
+        state = self.model.state
         gfiles = self.model.build_model_from_current_state()
         try:
             contents = gfiles[0].build(timestamp=True)
@@ -131,12 +134,25 @@ class Controller(object):
             return
         self.gui.status('Generating input files...')
         fn, ext = os.path.splitext(path)
+        # First, dump GUI state
+        with open('{}_state.json'.format(fn), 'w') as f:
+            json.dump(state, f, default=lambda a: None)
+        # Second, export files
         for i, gfile in enumerate(gfiles):
             outpath = '{fn}{i}{ext}'.format(fn=fn, i=i+1 if i else '', ext=ext)
             with open(outpath, 'w') as f:
                 contents = gfile.build(timestamp=True)
                 f.write(contents)
         self.gui.status('Saved {} file(s) to {}!'.format(len(gfiles), path), blankAfter=5)
+
+    def _cmd_Import(self, *args):
+        path = askopenfilename(title='Choose .json state file',
+                               filetypes=[('JSON files', '*.json'), ('All', '*')])
+        if not path:
+            return
+        with open(path) as f:
+            state = json.load(f)
+        self.gui.load_state(state)
 
     def _cmd_Close(self, *args):
         del self.model
@@ -145,6 +161,16 @@ class Controller(object):
 
     def _cmd_molecules(self, *args):
         m = self.gui.ui_molecules.getvalue()
+        if m is None:
+            self.gui.buttonWidgets['Export']['state'] = 'disabled'
+            self.gui.buttonWidgets['Preview']['state'] = 'disabled'
+            self.gui.buttonWidgets['Copy']['state'] = 'disabled'
+            return
+
+        self.gui.buttonWidgets['Export']['state'] = 'normal'
+        self.gui.buttonWidgets['Preview']['state'] = 'normal'
+        self.gui.buttonWidgets['Copy']['state'] = 'normal'
+
         n_coordsets = len(m.coordSets)
         if n_coordsets > 1:
             self.gui.ui_replicas_chk['state'] = 'normal'

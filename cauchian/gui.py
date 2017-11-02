@@ -93,6 +93,14 @@ class CauchianDialog(PlumeBaseDialog):
         # Fire up
         super(CauchianDialog, self).__init__(*args, **kwargs)
 
+    def load_state(self, state, *args, **kwargs):
+        for key, value in state.items():
+            attr = getattr(self, 'var_' + key, None)
+            if attr is not None:
+                attr.set(value)
+            else:
+                setattr(self, '_' + key, value)
+
     def fill_in_ui(self, parent):
         # Select molecules
         self.ui_system_frame = tk.LabelFrame(self.canvas, text='Configure system')
