@@ -5,7 +5,7 @@
 from __future__ import print_function, division
 # Python stdlib
 from tkFileDialog import askopenfilename, asksaveasfilename
-from copy import deepcopy
+from copy import copy, deepcopy
 from traceback import print_exc
 import os
 # Chimera stuff
@@ -129,13 +129,14 @@ class Controller(object):
                                  defaultextension='.com')
         if not path:
             return
+        self.gui.status('Generating input files...')
         fn, ext = os.path.splitext(path)
         for i, gfile in enumerate(gfiles):
-            outpath = '{fn}{i}{ext}'.format(fn=fn, i=i if i else '', ext=ext)
+            outpath = '{fn}{i}{ext}'.format(fn=fn, i=i+1 if i else '', ext=ext)
             with open(outpath, 'w') as f:
                 contents = gfile.build(timestamp=True)
                 f.write(contents)
-        self.gui.status('Saved {} to {}!'.format(len(gfiles), path), blankAfter=5)
+        self.gui.status('Saved {} file(s) to {}!'.format(len(gfiles), path), blankAfter=5)
 
     def _cmd_Close(self, *args):
         del self.model
@@ -144,9 +145,12 @@ class Controller(object):
 
     def _cmd_molecules(self, *args):
         m = self.gui.ui_molecules.getvalue()
-        if len(m.coordSets) > 1:
+        n_coordsets = len(m.coordSets)
+        if n_coordsets > 1:
             self.gui.ui_replicas_chk['state'] = 'normal'
+            self.gui.ui_replicas_chk['text'] = '{} frames'.format(n_coordsets)
         else:
+            self.gui.ui_replicas_chk['text'] = 'No frames'
             self.gui.ui_replicas_chk['state'] = 'disabled'
             self.gui.var_molecule_replicas.set(0)
 
@@ -323,13 +327,13 @@ class Model(object):
         if with_atoms:
             infile.atoms = self.process_atoms(state)
             if with_replicas and state['replicas']:
-                for index, coordset in state['molecule'].coordSets():
+                for index, coordset in state['molecule'].coordSets.items():
                     if coordset is state['molecule'].activeCoordSet:
                         continue
-                    replica = deepcopy(infile)
+                    replica = copy(infile)
                     replica.title += ' - Replica {}'.format(index)
                     for atom, coord in zip(replica.atoms, coordset.xyzArray()):
-                        atom.coordinates = coord.data()
+                        atom.coordinates = tuple(coord)
                     replicas.append(replica)
 
         return replicas
