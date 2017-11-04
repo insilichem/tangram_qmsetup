@@ -430,7 +430,9 @@ class GaussianInputFile(object):
 
     @multiplicity.setter
     def multiplicity(self, value):
-        self._multiplicity = value
+        if int(value) < 1:
+            raise ValueError('Multiplicity must be greater than 0')
+        self._multiplicity = int(value)
 
     @property
     def mm_charge(self):
@@ -446,7 +448,9 @@ class GaussianInputFile(object):
 
     @mm_multiplicity.setter
     def mm_multiplicity(self, value):
-        self._mm_multiplicity = value
+        if int(value) < 1:
+            raise ValueError('Multiplicity must be greater than 0')
+        self._mm_multiplicity = int(value)
 
     ###########################
     def compute_charge(self):

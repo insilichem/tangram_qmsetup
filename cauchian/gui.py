@@ -71,6 +71,7 @@ class CauchianDialog(PlumeBaseDialog):
         # Charges & Multiplicity
         self.var_charge_qm = tk.IntVar()
         self.var_multiplicity_qm = tk.IntVar()
+        self.var_multiplicity_qm.set(1)
         self.var_charge_mm = tk.StringVar()
         self.var_multiplicity_mm = tk.StringVar()
 
@@ -120,7 +121,7 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_multiplicity_qm = tk.Entry(self.canvas, textvariable=self.var_multiplicity_qm, width=3)
         self.ui_multiplicity_mm = tk.Entry(self.canvas, textvariable=self.var_multiplicity_mm, width=3)
         charges_grid = [['Charge:', (self.ui_charges_qm, '(QM)'), (self.ui_charges_mm, '(MM)')],
-                        ['Spin:', (self.ui_multiplicity_qm, '(QM)'), (self.ui_multiplicity_mm, '(MM)')]]
+                        ['Mult:', (self.ui_multiplicity_qm, '(QM)'), (self.ui_multiplicity_mm, '(MM)')]]
         self.auto_grid(self.ui_charges_frame, charges_grid, resize_columns=(1,2), label_sep='')
 
         kw = dict(padx=5, pady=5)
