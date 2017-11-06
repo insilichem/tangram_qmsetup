@@ -37,6 +37,9 @@ class CauchianDialog(PlumeBaseDialog):
     buttons = ('Preview', 'Copy', 'Export', 'Import', 'Close')
     statusResizing = False
     default = 'Preview'
+    help = "https://github.com/insilichem/plume_cauchian"
+    VERSION = '0.0.1'
+    VERSION_URL = "https://api.github.com/repos/insilichem/plume_cauchian/releases/latest"
 
     def __init__(self, *args, **kwargs):
         # GUI init
