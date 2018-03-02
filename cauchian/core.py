@@ -12,6 +12,7 @@ import json
 # Chimera stuff
 import chimera
 from chimera.baseDialog import NotifyDialog
+from WriteMol2 import chimera2sybyl
 # Additional 3rd parties
 # Own
 from pygaussian import GaussianAtom, GaussianInputFile
@@ -51,7 +52,7 @@ class Controller(object):
 
         # Button actions
         buttons = ('ui_layers', 'ui_solvent_btn', 'ui_qm_basis_per_atom',
-                   'ui_redundant_btn', 'ui_mm_frcmod_btn', 'ui_checkpoint_btn')
+                   'ui_redundant_btn', 'ui_mm_frcmod_btn', 'ui_mm_types_btn', 'ui_checkpoint_btn')
         for btn in buttons:
             button = getattr(self.gui, btn)
             command = getattr(self, '_cmd' + btn[2:], None)
@@ -199,6 +200,13 @@ class Controller(object):
         if path:
             self.gui.var_mm_frcmod.set(path)
 
+    def _cmd_mm_types_btn(self, *args):
+        if self.gui.var_mm_forcefield.get() == 'GAFF':
+            import AddCharge.gui as AC
+            d = AC.AddChargesDialog(models=[self.gui.ui_molecules.getvalue()],
+                                    chargeModel='AMBER ff99SB')
+
+
     def _cmd_checkpoint_btn(self, *args):
         path = asksaveasfilename()
         if path:
@@ -231,21 +239,21 @@ class Controller(object):
     def _trc_calculation(self, *args):
         value = self.gui.var_calculation.get()
         if value == 'ONIOM':
-            self.gui.ui_layers.configure(state='normal')
-            self.gui.ui_mm_forcefields.configure(menubutton_state='normal')
-            self.gui.ui_mm_water_forcefield.configure(menubutton_state='normal')
-            self.gui.ui_mm_frcmod.configure(state='normal')
-            self.gui.ui_mm_frcmod_btn.configure(state='normal')
-            self.gui.ui_charges_mm.configure(state='normal')
-            self.gui.ui_multiplicity_mm.configure(state='normal')
+            self.gui.ui_layers['state'] = 'normal'
+            self.gui.ui_mm_forcefields['menubutton_state'] = 'normal'
+            self.gui.ui_mm_water_forcefield['menubutton_state'] = 'normal'
+            self.gui.ui_mm_frcmod['state'] = 'normal'
+            self.gui.ui_mm_frcmod_btn['state'] = 'normal'
+            self.gui.ui_charges_mm['state'] = 'normal'
+            self.gui.ui_multiplicity_mm['state'] = 'normal'
         else:  # == QM
-            self.gui.ui_layers.configure(state='disabled')
-            self.gui.ui_mm_forcefields.configure(menubutton_state='disabled')
-            self.gui.ui_mm_water_forcefield.configure(menubutton_state='disabled')
-            self.gui.ui_mm_frcmod.configure(state='disabled')
-            self.gui.ui_mm_frcmod_btn.configure(state='disabled')
-            self.gui.ui_charges_mm.configure(state='disabled')
-            self.gui.ui_multiplicity_mm.configure(state='disabled')
+            self.gui.ui_layers['state'] = 'disabled'
+            self.gui.ui_mm_forcefields['menubutton_state'] = 'disabled'
+            self.gui.ui_mm_water_forcefield['menubutton_state'] = 'disabled'
+            self.gui.ui_mm_frcmod['state'] = 'disabled'
+            self.gui.ui_mm_frcmod_btn['state'] = 'disabled'
+            self.gui.ui_charges_mm['state'] = 'disabled'
+            self.gui.ui_multiplicity_mm['state'] = 'disabled'
 
     def _trc_checkpoint(self, *args):
         if self.gui.var_checkpoint.get():
@@ -291,6 +299,12 @@ class Controller(object):
         if basis:
             self.gui.var_qm_basis_set.set('{}{}'.format(basis, ext if ext else ''))
     _trc_qm_basis_ext = _trc_qm_basis_kind
+
+    def _trc_mm_forcefield(self, *args):
+        if self.gui.var_mm_forcefield.get() == 'GAFF':
+            self.gui.ui_mm_types_btn['state'] = 'normal'
+        else:
+            self.gui.ui_mm_types_btn['state'] = 'disabled'
 
     def _trg_molecule_changed(self, *args, **kwargs):
         self.model._bondorder_cache.clear()
@@ -374,12 +388,12 @@ class Model(object):
         state['qm_basis_set_extra'] = self.gui._qm_basis_extra.copy()
         state['restraints'] = self.gui._restraints[:]
         state['molecule'] = self.gui.ui_molecules.getvalue()
-        state['layers'] = self.gui._layers.copy()
+        state['layers_flex'] = self.gui._layers.copy()
         state['replicas'] = self.gui.var_molecule_replicas.get()
 
         return state
 
-    def gaussian_atom(self, atom, n, oniom=True, layer=None, link=None):
+    def gaussian_atom(self, atom, n, oniom=True, layer=None, link=None, frozen=False):
         """
         Creates a GaussianAtom instance from a chimera.Atom object.
 
@@ -400,7 +414,8 @@ class Model(object):
             if layer is None:
                 raise ValueError('layer must be set if oniom is True')
             gatom.pdb_name = atom.name
-            gatom.atom_type = atom.idatmType
+            gatom.atom_type = getattr(atom, 'gaffType',
+                                      chimera2sybyl.get(atom.idatmType, atom.idatmType))
             geometry = chimera.idatm.typeInfo.get(atom.idatmType)
             if geometry is not None:
                 gatom.geometry = geometry.geometry
@@ -408,6 +423,7 @@ class Model(object):
             gatom.residue_number = atom.residue.id.position
             gatom.oniom_layer = layer
             gatom.oniom_link = link
+            gatom.freeze_code = frozen
             gatom.charge = getattr(atom, 'charge', None)
         self._atoms_map[atom] = gatom
         return gatom
@@ -418,15 +434,17 @@ class Model(object):
         gaussian_atoms = []
         chimera_atoms = state['molecule'].atoms
         mapping = {}
-        oniom, kw, layers = False, {}, {}
+        oniom, kw, layers_flex, frozen = False, {}, {}, {}
 
         if state['calculation'] == 'ONIOM':  # we have layers to deal with!
             oniom = True
-            layers = state['layers']
-            if not layers:
+            layers_flex = state['layers_flex']
+            frozen
+            if not layers_flex:
                 raise chimera.UserError('ONIOM layers have not been defined!')
         for n, catom in enumerate(chimera_atoms):
-            kw = dict(oniom=oniom,layer=layers.get(catom), link=None)
+            layer, frozen = layers_flex.get(catom, (None, None))
+            kw = dict(oniom=oniom, layer=layer, frozen=int(frozen))
             gatom = self.gaussian_atom(catom, n=n+1, **kw)
             gaussian_atoms.append(gatom)
             mapping[catom] = gatom

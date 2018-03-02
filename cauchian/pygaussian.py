@@ -18,7 +18,7 @@ if sys.version_info.major == 3:
 
 # QM_BASIS_SETS_EXT = ['d,f-Diffuse (+)', 'p,d,f-Diffuse (++)', 'd,f-Polarization (*)', 'p,d,f-Polarization (**)']
 MM_FORCEFIELDS = {
-    'General': ['Amber', 'Dreiding', 'UFF'],
+    'General': ['Amber', 'GAFF', 'Dreiding', 'UFF'],
     'Water': ['TIP3P']
 }
 MEM_UNITS = ('KB', 'MB', 'GB', 'TB', 'KW', 'MW', 'GW', 'TW')

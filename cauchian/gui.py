@@ -116,7 +116,7 @@ class CauchianDialog(PlumeBaseDialog):
                                                        variable=self.var_molecule_replicas)
         self.ui_connectivity = tk.Checkbutton(self.canvas, variable=self.var_connectivity,
                                               text='Connectivity')
-        self.ui_redundant_btn = tk.Button(self.canvas, text='ModRedundant')
+        self.ui_redundant_btn = tk.Button(self.canvas, text='ModRedundant', state='disabled')
 
         self.ui_charges_frame = tk.Frame(self.canvas)
         self.ui_charges_qm = tk.Entry(self.canvas, textvariable=self.var_charge_qm, width=3)
@@ -145,7 +145,7 @@ class CauchianDialog(PlumeBaseDialog):
                                            history=True, unique=True, dropdown=True)
         self.ui_calculation = Pmw.OptionMenu(self.canvas, items=['QM', 'ONIOM'], initialitem=0,
                                              menubutton_textvariable=self.var_calculation)
-        self.ui_layers = tk.Button(self.canvas, text='Layers')
+        self.ui_layers = tk.Button(self.canvas, text='Layers/Flex')
         self.ui_qm_keywords = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_qm_keywords,
                                            history=True, unique=True, dropdown=True,
                                            labelpos='w', label_text='Extra keywords: ')
@@ -188,8 +188,10 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_mm_frcmod = tk.Entry(self.canvas, textvariable=self.var_mm_frcmod)
         self.ui_mm_frcmod_btn = tk.Button(self.canvas, text='...')
 
-        mm_grid = [['Forcefield', (self.ui_mm_forcefields, 'Waters', self.ui_mm_water_forcefield)],
-                   ['Frcmod', (self.ui_mm_frcmod, self.ui_mm_frcmod_btn)]]
+        self.ui_mm_types_btn = tk.Button(self.canvas, text='Set MM Atom Types')
+
+        mm_grid = [[('Forcefield', self.ui_mm_forcefields), ('Waters', self.ui_mm_water_forcefield)],
+                   [('Frcmod', self.ui_mm_frcmod, self.ui_mm_frcmod_btn), self.ui_mm_types_btn]]
         self.auto_grid(self.ui_mm_frame, mm_grid)
 
         # Hardware
@@ -463,7 +465,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         self.ui_molecule.grid(row=row, padx=5, pady=5, sticky='we')
         row +=1
         self.ui_toolbar_frame = tk.LabelFrame(self.canvas, text='Selection tools')
-        self.ui_toolbar_frame.grid(row=row, padx=5, pady=5, sticky='w')
+        self.ui_toolbar_frame.grid(row=row, padx=5, pady=5, sticky='we')
         self.ui_select_all = tk.Button(self.canvas, text='All', command=self._cb_select_all)
         self.ui_select_none = tk.Button(self.canvas, text='None', command=self._cb_select_none)
         self.ui_select_invert = tk.Button(self.canvas, text='Invert', command=self._cb_select_invert)
@@ -473,9 +475,14 @@ class ONIOMLayersDialog(PlumeBaseDialog):
                                                    items=['', 'H', 'M', 'L'])
         self.ui_batch_layer_btn = tk.Button(self.canvas, text='Set',
                                             command=self._cb_batch_layer_btn)
-        toolbar = [[self.ui_select_all, self.ui_select_none, self.ui_select_invert,
-                   self.ui_select_selection, (self.ui_batch_layer_entry, self.ui_batch_layer_btn)]]
-        self.auto_grid(self.ui_toolbar_frame, toolbar, padx=3, pady=5, sticky='w')
+        self.ui_batch_frozen_entry = Pmw.OptionMenu(self.canvas, labelpos='w',
+                                                   label_text='Freeze selected:',
+                                                   items=['Yes', 'No'])
+        self.ui_batch_frozen_btn = tk.Button(self.canvas, text='Set',
+                                            command=self._cb_batch_freeze_btn)
+        toolbar = [[self.ui_select_all, self.ui_select_none, self.ui_batch_layer_entry, self.ui_batch_layer_btn],
+                   [self.ui_select_invert, self.ui_select_selection, self.ui_batch_frozen_entry, self.ui_batch_frozen_btn]]
+        self.auto_grid(self.ui_toolbar_frame, toolbar, padx=3, pady=3, sticky='we')
 
         row += 1
         self.canvas.rowconfigure(row, weight=1)
@@ -483,10 +490,11 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         self.ui_table.grid(row=row, padx=5, pady=5, sticky='news')
         kw = dict(anchor='w', refresh=False)
         t.addColumn('#', 'serial', format="%d", headerPadX=5, **kw)
-        t.addColumn('Atom', 'atom', format=str, headerPadX=75, **kw)
+        t.addColumn('Atom', 'atom', format=str, headerPadX=50, **kw)
         t.addColumn('Element', 'element', headerPadX=5, **kw)
         t.addColumn('Type', 'idatmtype', format=str, headerPadX=5, **kw)
         t.addColumn('Layer', 'var_layer', format=lambda a: a, headerPadX=5, **kw)
+        t.addColumn('Freeze', 'var_frozen', format=lambda a: a, headerPadX=5, **kw)
         if self.ui_molecule.getvalue():
             self.ui_molecule.invoke()
         else:
@@ -505,6 +513,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
             mapping[atom] = row = _AtomTableProxy(**kwargs)
             data.append(row)
         self.ui_table.setData(data)
+        self.canvas.after(100, self.ui_table.requestFullWidth)
 
     def restore_dialog(self, molecule, rows):
         self.ui_molecule_dropdown.set(molecule)
@@ -515,7 +524,7 @@ class ONIOMLayersDialog(PlumeBaseDialog):
 
     def export_dialog(self):
         molecule = self.ui_molecule.getvalue()
-        rows = [(row.atom, row.layer) for row in self.ui_table.data]
+        rows = [(row.atom, (row.layer, row.frozen)) for row in self.ui_table.data]
         return molecule, rows
 
     def _cb_batch_layer_btn(self, *args, **kwargs):
@@ -524,6 +533,14 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         for row in selected:
             row.layer = layer
         self.status('Applied layer {} to {} rows'.format(layer, len(selected)),
+                    color='blue', blankAfter=3)
+
+    def _cb_batch_freeze_btn(self, *args, **kwargs):
+        frozen = self.ui_batch_frozen_entry.getvalue()
+        selected = self.ui_table.selected()
+        for row in selected:
+            row.frozen = frozen
+        self.status('Applied freeze code {} to {} rows'.format(frozen, len(selected)),
                     color='blue', blankAfter=3)
 
     def _cb_select_all(self, *args, **kwargs):
@@ -552,13 +569,13 @@ class ONIOMLayersDialog(PlumeBaseDialog):
     def OK(self, *args, **kwargs):
         self.layers.clear()
         molecule, rows = self.export_dialog()
-        for i, (atom, layer) in enumerate(rows):
+        for i, (atom, (layer, frozen)) in enumerate(rows):
             if not layer:
                 not_filledin = len([1 for row in rows[i+1:] if not row[1]])
                 raise UserError('Atom {} {} no layer defined!'.format(atom,
                                 'and {} atoms more have'.format(not_filledin)
                                 if not_filledin else 'has'))
-            self.layers[atom] = layer
+            self.layers[atom] = (layer, frozen)
         self.Close()
 
 
@@ -581,6 +598,8 @@ class _AtomTableProxy(object):
 
         self.var_layer = tk.StringVar()
         self.var_layer.set('')
+        self.var_frozen = tk.StringVar()
+        self.var_frozen.set('')
 
     @property
     def layer(self):
@@ -589,6 +608,19 @@ class _AtomTableProxy(object):
     @layer.setter
     def layer(self, value):
         self.var_layer.set(value.strip().upper())
+
+    @property
+    def frozen(self):
+        return self.var_frozen.get()
+
+    @frozen.setter
+    def frozen(self, value):
+        if value == 'Yes':
+            self.var_frozen.set('-1')
+        elif value == 'No':
+            self.var_frozen.set('0')
+        else:
+            raise chimera.userError('Value for freeze code can only be True or False')
 
 
 class _SortableTableWithEntries(SortableTable):
