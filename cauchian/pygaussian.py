@@ -1147,7 +1147,7 @@ class ModRedundantRestraint(object):
 
 
 def import_from_frcmod(path):
-    pass
+    return path
 
 
 if __name__ == '__main__':

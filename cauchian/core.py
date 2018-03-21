@@ -239,7 +239,6 @@ class Controller(object):
     def _trc_calculation(self, *args):
         value = self.gui.var_calculation.get()
         if value == 'ONIOM':
-            self.gui.ui_layers['state'] = 'normal'
             self.gui.ui_mm_forcefields['menubutton_state'] = 'normal'
             self.gui.ui_mm_water_forcefield['menubutton_state'] = 'normal'
             self.gui.ui_mm_frcmod['state'] = 'normal'
@@ -247,7 +246,6 @@ class Controller(object):
             self.gui.ui_charges_mm['state'] = 'normal'
             self.gui.ui_multiplicity_mm['state'] = 'normal'
         else:  # == QM
-            self.gui.ui_layers['state'] = 'disabled'
             self.gui.ui_mm_forcefields['menubutton_state'] = 'disabled'
             self.gui.ui_mm_water_forcefield['menubutton_state'] = 'disabled'
             self.gui.ui_mm_frcmod['state'] = 'disabled'
@@ -443,7 +441,7 @@ class Model(object):
             if not layers_flex:
                 raise chimera.UserError('ONIOM layers have not been defined!')
         for n, catom in enumerate(chimera_atoms):
-            layer, frozen = layers_flex.get(catom, (None, None))
+            layer, frozen = layers_flex.get(catom, (None, 0))
             kw = dict(oniom=oniom, layer=layer, frozen=int(frozen))
             gatom = self.gaussian_atom(catom, n=n+1, **kw)
             gaussian_atoms.append(gatom)

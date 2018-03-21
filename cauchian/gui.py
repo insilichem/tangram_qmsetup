@@ -117,6 +117,7 @@ class CauchianDialog(PlumeBaseDialog):
         self.ui_connectivity = tk.Checkbutton(self.canvas, variable=self.var_connectivity,
                                               text='Connectivity')
         self.ui_redundant_btn = tk.Button(self.canvas, text='ModRedundant', state='disabled')
+        self.ui_layers = tk.Button(self.canvas, text='Layers & Flex')
 
         self.ui_charges_frame = tk.Frame(self.canvas)
         self.ui_charges_qm = tk.Entry(self.canvas, textvariable=self.var_charge_qm, width=3)
@@ -132,8 +133,8 @@ class CauchianDialog(PlumeBaseDialog):
             rowspan=3, sticky='news', **kw)
         self.ui_replicas_chk.grid(in_=self.ui_system_frame, row=0, column=1, **kw)
         self.ui_connectivity.grid(in_=self.ui_system_frame, row=0, column=2, **kw)
-        self.ui_redundant_btn.grid(in_=self.ui_system_frame, row=1, column=1,
-            columnspan=2, sticky='we', **kw)
+        self.ui_redundant_btn.grid(in_=self.ui_system_frame, row=1, column=1, sticky='we', **kw)
+        self.ui_layers.grid(in_=self.ui_system_frame, row=1, column=2, sticky='we', **kw)
         self.ui_charges_frame.grid(in_=self.ui_system_frame, row=2, column=1,
             columnspan=2, sticky='news', **kw)
 
@@ -145,12 +146,11 @@ class CauchianDialog(PlumeBaseDialog):
                                            history=True, unique=True, dropdown=True)
         self.ui_calculation = Pmw.OptionMenu(self.canvas, items=['QM', 'ONIOM'], initialitem=0,
                                              menubutton_textvariable=self.var_calculation)
-        self.ui_layers = tk.Button(self.canvas, text='Layers/Flex')
         self.ui_qm_keywords = Pmw.ComboBox(self.canvas, entry_textvariable=self.var_qm_keywords,
                                            history=True, unique=True, dropdown=True,
                                            labelpos='w', label_text='Extra keywords: ')
 
-        model_grid = [[('Model', self.ui_calculation, self.ui_layers, 'Job', self.ui_job, self.ui_job_options)],
+        model_grid = [[('Model', self.ui_calculation, 'Job', self.ui_job, self.ui_job_options)],
                       [self.ui_qm_keywords]]
         self.auto_grid(self.ui_model_frame, model_grid, padx=3, pady=3)
 
@@ -464,19 +464,19 @@ class ONIOMLayersDialog(PlumeBaseDialog):
         self.ui_molecule = MoleculeOptionMenu(self.canvas, command=self.populate_table)
         self.ui_molecule.grid(row=row, padx=5, pady=5, sticky='we')
         row +=1
-        self.ui_toolbar_frame = tk.LabelFrame(self.canvas, text='Selection tools')
+        self.ui_toolbar_frame = tk.LabelFrame(self.canvas, text='Configure selected entries')
         self.ui_toolbar_frame.grid(row=row, padx=5, pady=5, sticky='we')
         self.ui_select_all = tk.Button(self.canvas, text='All', command=self._cb_select_all)
         self.ui_select_none = tk.Button(self.canvas, text='None', command=self._cb_select_none)
         self.ui_select_invert = tk.Button(self.canvas, text='Invert', command=self._cb_select_invert)
         self.ui_select_selection = tk.Button(self.canvas, text='Current', command=self._cb_select_selection)
         self.ui_batch_layer_entry = Pmw.OptionMenu(self.canvas, labelpos='w',
-                                                   label_text='Layer for selected:',
+                                                   label_text='ONIOM Layer:',
                                                    items=['', 'H', 'M', 'L'])
         self.ui_batch_layer_btn = tk.Button(self.canvas, text='Set',
                                             command=self._cb_batch_layer_btn)
         self.ui_batch_frozen_entry = Pmw.OptionMenu(self.canvas, labelpos='w',
-                                                   label_text='Freeze selected:',
+                                                   label_text='Freeze state:',
                                                    items=['Yes', 'No'])
         self.ui_batch_frozen_btn = tk.Button(self.canvas, text='Set',
                                             command=self._cb_batch_freeze_btn)
