@@ -20,7 +20,7 @@ from pygaussian import JOB_OPTIONS, QM_FUNCTIONALS
 try:
     from bondorder.core import assign_bond_orders
 except ImportError:
-    print('! Plume BondOrder not installed. Bond order perception disabled!')
+    print('! Tangram BondOrder not installed. Bond order perception disabled!')
     def assign_bond_orders(*args):
         pass
 
@@ -458,7 +458,7 @@ class Model(object):
         if show_warning:
             errormsg = ('Some bonds did not specify bond order, so a default of 1.0 '
                         'was used. If you want compute them or edit them manually, '
-                        'please use Plume BondOrder extension.')
+                        'please use Tangram BondOrder extension.')
             d = NotifyDialog(errormsg, icon='warning')
             d.OK = d.Close
             d.enter()

@@ -1,4 +1,4 @@
-# Plume Cauchian
+# Tangram Cauchian
 
 A Chimera GUI extension to create Gaussian input files.
 

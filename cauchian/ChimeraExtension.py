@@ -2,14 +2,14 @@
 # encoding: utf-8
 
 
-from __future__ import print_function, division 
+from __future__ import print_function, division
 import chimera.extension
 
 
 class CauchianExtension(chimera.extension.EMO):
 
     def name(self):
-        return 'Plume Cauchian'
+        return 'Tangram Cauchian'
 
     def description(self):
         return "Prepare input files for Gaussian jobs"

@@ -16,7 +16,7 @@ from chimera import UserError
 from chimera.baseDialog import ModelessDialog, NotifyDialog
 from chimera.widgets import MoleculeScrolledListBox, SortableTable, MoleculeOptionMenu
 # Own
-from libplume.ui import PlumeBaseDialog, STYLES
+from libtangram.ui import TangramBaseDialog, STYLES
 from core import Controller, Model
 from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
                         QM_BASIS_SETS, QM_BASIS_SETS_EXT, ModRedundantRestraint)
@@ -32,18 +32,18 @@ def showUI(*args, **kwargs):
     ui.enter()
 
 
-class CauchianDialog(PlumeBaseDialog):
+class CauchianDialog(TangramBaseDialog):
 
     buttons = ('Preview', 'Copy', 'Export', 'Import', 'Close')
     statusResizing = False
     default = 'Preview'
-    help = "https://github.com/insilichem/plume_cauchian"
+    help = "https://github.com/insilichem/tangram_cauchian"
     VERSION = '0.0.1'
-    VERSION_URL = "https://api.github.com/repos/insilichem/plume_cauchian/releases/latest"
+    VERSION_URL = "https://api.github.com/repos/insilichem/tangram_cauchian/releases/latest"
 
     def __init__(self, *args, **kwargs):
         # GUI init
-        self.title = 'Plume Cauchian'
+        self.title = 'Tangram Cauchian'
 
         # Molecule variables
         self.var_molecule_replicas = tk.IntVar()
@@ -264,7 +264,7 @@ ELEMENTS = [
 ALL_ELEMENTS = [element for row in ELEMENTS for element in row if element]
 
 
-class BasisSetDialog(PlumeBaseDialog):
+class BasisSetDialog(TangramBaseDialog):
 
     """
     A Tkinter GUI to EMSL Basis Set Exchange database. Requires ebsel
@@ -440,7 +440,7 @@ class BasisSetDialog(PlumeBaseDialog):
 #
 #############################
 
-class ONIOMLayersDialog(PlumeBaseDialog):
+class ONIOMLayersDialog(TangramBaseDialog):
 
     """
     Define ONIOM Layers on a per-atom basis
@@ -652,7 +652,7 @@ class _SortableTableWithEntries(SortableTable):
 #
 #############################
 
-class ModRedundantDialog(PlumeBaseDialog):
+class ModRedundantDialog(TangramBaseDialog):
 
     buttons = ('OK', 'Close')
     oneshot = True
