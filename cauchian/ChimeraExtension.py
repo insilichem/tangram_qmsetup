@@ -9,7 +9,7 @@ import chimera.extension
 class CauchianExtension(chimera.extension.EMO):
 
     def name(self):
-        return 'Tangram Cauchian'
+        return 'Tangram QMSetup'
 
     def description(self):
         return "Prepare input files for Gaussian jobs"

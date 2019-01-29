@@ -43,7 +43,7 @@ class CauchianDialog(TangramBaseDialog):
 
     def __init__(self, *args, **kwargs):
         # GUI init
-        self.title = 'Tangram Cauchian'
+        self.title = 'Tangram QMSetup'
 
         # Molecule variables
         self.var_molecule_replicas = tk.IntVar()

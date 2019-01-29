@@ -9,6 +9,7 @@ from copy import copy
 from traceback import print_exc
 import os
 import json
+import re
 # Chimera stuff
 import chimera
 from chimera.baseDialog import NotifyDialog
@@ -464,3 +465,26 @@ class Model(object):
             d.enter()
 
         return gaussian_atoms
+
+
+import chimera
+if not hasattr(chimera, '_openMol2Model_original'):
+    chimera._openMol2Model_original = chimera._openMol2Model
+
+
+def patch_mol2_reader(*args, **kwargs):
+    """
+    Force UCSF Chimera to read UFF atom types in Mol2
+    """
+    def parse_uff(atom_line):
+        atom_type = getattr(atom_line, 'mol2type', None) or atom_line.split().fields[5]
+        matches = re.search(r'([A-Za-z]{1,3})[^A-Za-z\s]{0,6}', atom_type)
+        element = matches.group(0).title() if matches else atom_type
+        return element
+    molecules = chimera._openMol2Model_original(*args, **kwargs)
+    for molecule in molecules:
+        for atom in molecule.atoms:
+            atom.element = chimera.Element(parse_uff(atom))
+
+
+chimera._openMol2Model = patch_mol2_reader
