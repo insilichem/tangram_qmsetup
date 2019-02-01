@@ -26,20 +26,20 @@ from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUN
 def showUI(*args, **kwargs):
     if chimera.nogui:
         tk.Tk().withdraw()
-    ui = CauchianDialog(*args, **kwargs)
+    ui = QMSetupDialog(*args, **kwargs)
     model = Model(gui=ui)
     controller = Controller(gui=ui, model=model)
     ui.enter()
 
 
-class CauchianDialog(TangramBaseDialog):
+class QMSetupDialog(TangramBaseDialog):
 
     buttons = ('Preview', 'Copy', 'Export', 'Import', 'Close')
     statusResizing = False
     default = 'Preview'
-    help = "https://github.com/insilichem/tangram_cauchian"
+    help = "https://github.com/insilichem/tangram_qmsetup"
     VERSION = '0.0.1'
-    VERSION_URL = "https://api.github.com/repos/insilichem/tangram_cauchian/releases/latest"
+    VERSION_URL = "https://api.github.com/repos/insilichem/tangram_qmsetup/releases/latest"
 
     def __init__(self, *args, **kwargs):
         # GUI init
@@ -95,7 +95,7 @@ class CauchianDialog(TangramBaseDialog):
         self.ui_labels = {}
 
         # Fire up
-        super(CauchianDialog, self).__init__(*args, **kwargs)
+        super(QMSetupDialog, self).__init__(*args, **kwargs)
 
     def load_state(self, state, *args, **kwargs):
         for key, value in state.items():

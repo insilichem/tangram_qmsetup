@@ -1,2 +1,2 @@
 include versioneer.py
-include cauchian/_version.py
+include qmsetup/_version.py

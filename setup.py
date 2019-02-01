@@ -22,10 +22,10 @@ def read(*filenames, **kwargs):
 long_description = read('README.md')
 
 setup(
-    name='tangram_cauchian',
+    name='tangram_qmsetup',
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    url='https://github.com/insilichem/tangram_cauchian',
+    url='https://github.com/insilichem/tangram_qmsetup',
     author='Jaime Rodríguez-Guerra',
     author_email='jaime.rogue@gmail.com',
     description=long_description,

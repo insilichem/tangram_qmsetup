@@ -42,8 +42,8 @@ def get_config():
     cfg.VCS = "git"
     cfg.style = "pep440"
     cfg.tag_prefix = "v"
-    cfg.parentdir_prefix = "tangram_cauchian-"
-    cfg.versionfile_source = "cauchian/_version.py"
+    cfg.parentdir_prefix = "tangram_qmsetup-"
+    cfg.versionfile_source = "qmsetup/_version.py"
     cfg.verbose = False
     return cfg
 

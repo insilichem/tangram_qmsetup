@@ -1,4 +1,4 @@
-{% set name = "tangram_cauchian" %}
+{% set name = "tangram_qmsetup" %}
 
 
 package:
@@ -22,7 +22,7 @@ requirements:
     - sqlite
 
 about:
-  home: http://github.com/insilichem/tangram_cauchian
+  home: http://github.com/insilichem/tangram_qmsetup
   license: MIT
   license_family: MIT
 
@@ -30,7 +30,7 @@ about:
 
   description: |
     QM and QM/MM calculations setup for UCSF Chimera
-  doc_url: http://tangram-suite.readthedocs.io/en/latest/tangram_cauchian.html
-  dev_url: https://github.com/insilichem/tangram_cauchian
+  doc_url: http://tangram-suite.readthedocs.io/en/latest/tangram_qmsetup.html
+  dev_url: https://github.com/insilichem/tangram_qmsetup
 
 
