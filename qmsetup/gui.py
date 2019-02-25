@@ -5,6 +5,7 @@
 from __future__ import print_function, division
 # Python stdlib
 import Tkinter as tk
+from tkFileDialog import askopenfilenames
 import Pmw
 from multiprocessing import cpu_count
 from random import choice
@@ -12,38 +13,39 @@ from string import ascii_letters
 # Chimera stuff
 import chimera
 import chimera.tkgui
-from chimera import UserError
+from chimera import UserError, Element
 from chimera.baseDialog import ModelessDialog, NotifyDialog
 from chimera.widgets import MoleculeScrolledListBox, SortableTable, MoleculeOptionMenu
+from SimpleSession import registerAttribute
 # Own
 from libtangram.ui import TangramBaseDialog, STYLES
 from core import Controller, Model
 from pygaussian import (MM_FORCEFIELDS, MEM_UNITS, JOB_TYPES, QM_METHODS, QM_FUNCTIONALS,
-                        QM_BASIS_SETS, QM_BASIS_SETS_EXT, ModRedundantRestraint)
-
-
+                        QM_BASIS_SETS, QM_BASIS_SETS_EXT, ModRedundantRestraint, MM_ATTRIBS,
+                        GAUSSIAN_VERSION, MM_PROGRAM)
+from mm_dicts import MM_TYPES
 
 def showUI(*args, **kwargs):
     if chimera.nogui:
         tk.Tk().withdraw()
-    ui = QMSetupDialog(*args, **kwargs)
+    ui = CauchianDialog(*args, **kwargs)
     model = Model(gui=ui)
     controller = Controller(gui=ui, model=model)
     ui.enter()
 
 
-class QMSetupDialog(TangramBaseDialog):
+class CauchianDialog(TangramBaseDialog):
 
     buttons = ('Preview', 'Copy', 'Export', 'Import', 'Close')
     statusResizing = False
     default = 'Preview'
-    help = "https://github.com/insilichem/tangram_qmsetup"
+    help = "https://github.com/insilichem/tangram_cauchian"
     VERSION = '0.0.1'
-    VERSION_URL = "https://api.github.com/repos/insilichem/tangram_qmsetup/releases/latest"
+    VERSION_URL = "https://api.github.com/repos/insilichem/tangram_cauchian/releases/latest"
 
     def __init__(self, *args, **kwargs):
         # GUI init
-        self.title = 'Tangram QMSetup'
+        self.title = 'Tangram Cauchian'
 
         # Molecule variables
         self.var_molecule_replicas = tk.IntVar()
@@ -69,7 +71,13 @@ class QMSetupDialog(TangramBaseDialog):
         self._layers = {}
         self.var_mm_forcefield = tk.StringVar()
         self.var_mm_water_forcefield = tk.StringVar()
-        self.var_mm_frcmod = tk.StringVar()
+        self._mm_frcmod = []
+        self.var_mm_from_mol2 = tk.StringVar()
+        self.var_mm_external = tk.IntVar()
+        self.var_mm_residues = tk.IntVar()
+
+        # Atom types variables
+        self._mmtypes = {}
 
         # Charges & Multiplicity
         self.var_charge_qm = tk.IntVar()
@@ -95,7 +103,7 @@ class QMSetupDialog(TangramBaseDialog):
         self.ui_labels = {}
 
         # Fire up
-        super(QMSetupDialog, self).__init__(*args, **kwargs)
+        super(CauchianDialog, self).__init__(*args, **kwargs)
 
     def load_state(self, state, *args, **kwargs):
         for key, value in state.items():
@@ -117,8 +125,7 @@ class QMSetupDialog(TangramBaseDialog):
         self.ui_connectivity = tk.Checkbutton(self.canvas, variable=self.var_connectivity,
                                               text='Connectivity')
         self.ui_redundant_btn = tk.Button(self.canvas, text='ModRedundant', state='disabled')
-        self.ui_layers = tk.Button(self.canvas, text='Layers & Flex')
-
+        
         self.ui_charges_frame = tk.Frame(self.canvas)
         self.ui_charges_qm = tk.Entry(self.canvas, textvariable=self.var_charge_qm, width=3)
         self.ui_charges_mm = tk.Entry(self.canvas, textvariable=self.var_charge_mm, width=3)
@@ -134,7 +141,6 @@ class QMSetupDialog(TangramBaseDialog):
         self.ui_replicas_chk.grid(in_=self.ui_system_frame, row=0, column=1, **kw)
         self.ui_connectivity.grid(in_=self.ui_system_frame, row=0, column=2, **kw)
         self.ui_redundant_btn.grid(in_=self.ui_system_frame, row=1, column=1, sticky='we', **kw)
-        self.ui_layers.grid(in_=self.ui_system_frame, row=1, column=2, sticky='we', **kw)
         self.ui_charges_frame.grid(in_=self.ui_system_frame, row=2, column=1,
             columnspan=2, sticky='news', **kw)
 
@@ -177,21 +183,16 @@ class QMSetupDialog(TangramBaseDialog):
                    ['Solvent', self.ui_solvent_btn]]
         self.auto_grid(self.ui_qm_frame, qm_grid)
 
-        # MM Configuration
-        self.ui_mm_frame = tk.LabelFrame(self.canvas, text='MM Settings')
-        self.ui_mm_forcefields = Pmw.OptionMenu(self.canvas, initialitem=0,
-                                                items=MM_FORCEFIELDS['General'],
-                                                menubutton_textvariable=self.var_mm_forcefield)
+        # ONIOM Configuration
+        self.ui_mm_frame = tk.LabelFrame(self.canvas, text='ONIOM Settings')
         self.ui_mm_water_forcefield = Pmw.OptionMenu(self.canvas, initialitem=0,
                                                 items=MM_FORCEFIELDS['Water'],
                                                 menubutton_textvariable=self.var_mm_water_forcefield)
-        self.ui_mm_frcmod = tk.Entry(self.canvas, textvariable=self.var_mm_frcmod)
-        self.ui_mm_frcmod_btn = tk.Button(self.canvas, text='...')
+        self.ui_mm_set_types_btn = tk.Button(self.canvas, text='Set MM atom types')
+        self.ui_layers = tk.Button(self.canvas, text='Layers & Flex')
 
-        self.ui_mm_types_btn = tk.Button(self.canvas, text='Set MM Atom Types')
-
-        mm_grid = [[('Forcefield', self.ui_mm_forcefields), ('Waters', self.ui_mm_water_forcefield)],
-                   [('Frcmod', self.ui_mm_frcmod, self.ui_mm_frcmod_btn), self.ui_mm_types_btn]]
+        mm_grid = [[('Waters', self.ui_mm_water_forcefield)],
+                   [self.ui_mm_set_types_btn, self.ui_layers]]
         self.auto_grid(self.ui_mm_frame, mm_grid)
 
         # Hardware
@@ -532,6 +533,10 @@ class ONIOMLayersDialog(TangramBaseDialog):
         selected = self.ui_table.selected()
         for row in selected:
             row.layer = layer
+            if layer == 'H':
+                row.atom.drawMode = 3 #Ball and stick for High layer
+            else:
+                row.atom.drawMode = 2 #Stick for everyelse
         self.status('Applied layer {} to {} rows'.format(layer, len(selected)),
                     color='blue', blankAfter=3)
 
@@ -600,6 +605,12 @@ class _AtomTableProxy(object):
         self.var_layer.set('')
         self.var_frozen = tk.StringVar()
         self.var_frozen.set('')
+        self.var_element = tk.StringVar()
+        self.var_element.set(self.element)
+        self.var_mmtype = tk.StringVar()
+        self.var_mmtype.set('')
+        self.var_mmother = tk.StringVar()
+        self.var_mmother.set('')
 
     @property
     def layer(self):
@@ -620,14 +631,48 @@ class _AtomTableProxy(object):
         elif value == 'No':
             self.var_frozen.set('0')
         else:
-            raise chimera.userError('Value for freeze code can only be True or False')
+            raise UserError('Value for freeze code can only be True or False')
 
+    @property
+    def v_element(self):
+        return self.var_element.get()
+
+    @v_element.setter
+    def v_element(self, value):
+        self.var_element.set(str(value))
+    
+    @property
+    def mmtype(self):
+        return self.var_mmtype.get()
+
+    @mmtype.setter
+    def mmtype(self, value):
+        self.var_mmtype.set(str(value))
+
+    @property
+    def mmother(self):
+        return self.var_mmother.get()
+
+    @mmother.setter
+    def mmother(self, value):
+        self.var_mmother.set(str(value))
 
 class _SortableTableWithEntries(SortableTable):
 
     def _createCell(self, hlist, row, col, datum, column):
         contents = column.displayValue(datum)
-        if isinstance(contents, tk.StringVar):
+        
+        if column.title in ['MM type', 'element']:
+            entry = Pmw.EntryField(hlist,
+                                   entry_textvariable=contents,
+                                   entry_width=5,
+                                   **STYLES[Pmw.EntryField])
+            widget = self._widgetData[(datum, column)] = entry
+            hlist.item_create(row, col, itemtype="window", window=entry)
+            return
+        elif column.title in ['Other options']:
+            SortableTable._createCell(self, hlist, row, col, datum, column)
+        elif isinstance(contents, tk.StringVar):
             entry = Pmw.EntryField(hlist,
                                    entry_textvariable=contents,
                                    entry_width=3,
@@ -644,7 +689,6 @@ class _SortableTableWithEntries(SortableTable):
         if text.strip().upper() in ('H', 'L', 'M', ''):
             return Pmw.OK
         return Pmw.PARTIAL
-
 
 #############################
 #
@@ -808,3 +852,297 @@ class ModRedundantDialog(TangramBaseDialog):
         if value.isdigit() or value.strip() == '*' or not value:
             return Pmw.OK
         return Pmw.PARTIAL
+
+#############################
+#
+# MM Atom Types
+#
+#############################
+
+class MMTypesDialog(TangramBaseDialog):
+
+    """
+    Set MM Atom Types on a per-atom basis
+    """
+
+    buttons = ('OK', 'Close')
+
+    def __init__(self, saved_mmtypes=None, mmforcefield='GAFF', 
+                mmfrcmod='', *args, **kwargs):
+        #Variables
+        self.var_mm_attrib = tk.StringVar()
+        self.var_mm_orig_type = tk.StringVar()
+        self.var_mm_element = tk.StringVar()
+        self.var_mm_type = tk.StringVar()
+
+        # Fire up
+        self.title = 'Set MM atom types'
+        self.atoms2rows = {}
+        self.mmtypes = saved_mmtypes
+        self.mmforcefield = mmforcefield
+        self.mmfrcmod = mmfrcmod
+        super(MMTypesDialog, self).__init__(with_logo=False, *args, **kwargs)
+        registerAttribute(chimera.Atom, "mmType")
+        if saved_mmtypes:
+            self.restore_dialog(saved_mmtypes['molecule'], saved_mmtypes['atoms'])
+
+        #Trace variables of menus
+        self.var_mm_attrib.trace('w', self._trc_mm_attrib)
+        self._trc_mm_attrib()
+
+    def fill_in_ui(self, *args):
+        self.canvas.columnconfigure(0, weight=1)
+
+        row = 1
+        self.ui_mol_frame = tk.Frame(self.canvas)
+        self.ui_mol_frame.grid(row=row, padx=5, pady=5, sticky='we')
+        self.ui_molecule = MoleculeOptionMenu(self.canvas, command=self.populate_table)
+        self.ui_molecule.grid(row=row, padx=5, pady=5, sticky='we')
+        self.ui_mm_forcefields = Pmw.OptionMenu(self.canvas, initialitem=0,
+                                                items=MM_TYPES.keys(),
+                                                menubutton_textvariable=self.mmforcefield)
+        self.ui_calc_element = tk.Button(self.canvas, text='Deduce elements', command=self._calc_element)
+        toolbar = [[self.ui_molecule, 'Forcefield', self.ui_mm_forcefields, self.ui_calc_element]]
+        self.auto_grid(self.ui_mol_frame, toolbar, resize_columns=(), padx=3, pady=3, sticky='we')
+        row += 1
+        self.ui_frcmod_frame = tk.LabelFrame(self.canvas, text='Introduce .frcmod files')
+        self.ui_frcmod_frame.grid(row=row, padx=5, pady=5, sticky='we')
+        self.ui_files_to_load = Pmw.ScrolledListBox(self.canvas, listbox_height=3, listbox_width=40, 
+                                                    listbox_selectmode='multiple')
+        self.ui_addfiles = tk.Button(self.canvas, text='+', width=3, command=self._add_files)
+        self.ui_removefiles = tk.Button(self.canvas, text='-', width=3, command=self._remove_files)
+        toolbar = [[self.ui_files_to_load, (self.ui_addfiles, self.ui_removefiles)]]
+
+        self.auto_grid(self.ui_frcmod_frame, toolbar, resize_columns=(), padx=3, pady=3, sticky='we')
+        row += 1
+        self.ui_calc_mm_frame = tk.LabelFrame(self.canvas, text='Propose MM Types')
+        self.ui_calc_mm_frame.grid(row=row, padx=5, pady=5, sticky='we')
+        self.ui_calc_gaff = tk.Button(self.canvas, text='Go!', width=4, command=self._calc_gaff)
+        self.ui_mm_attrib = Pmw.OptionMenu(self.canvas, items=MM_ATTRIBS, initialitem=0,
+                                            menubutton_textvariable=self.var_mm_attrib)
+        self.ui_mm_orig_type = Pmw.OptionMenu(self.canvas, initialitem=0, items=MM_TYPES.keys(),
+                                                menubutton_textvariable=self.var_mm_orig_type)
+        self.ui_calc_mm = tk.Button(self.canvas, text='Go!', width=4, command=self._calc_mm)
+        toolbar = [[('Calculate charges and Amber/GAFF types by Chimera'), self.ui_calc_gaff],
+                    [('Use attrib', self.ui_mm_attrib, 'which contains', self.ui_mm_orig_type), self.ui_calc_mm]]
+        self.auto_grid(self.ui_calc_mm_frame, toolbar, resize_columns=()) #, padx=3, pady=3, sticky='we')
+        row += 1
+        self.ui_toolbar_frame = tk.LabelFrame(self.canvas, text='Configure selected entries')
+        self.ui_toolbar_frame.grid(row=row, padx=5, pady=5, sticky='we')
+        self.ui_select_all = tk.Button(self.canvas, text='All', command=self._cb_select_all)
+        self.ui_select_none = tk.Button(self.canvas, text='None', command=self._cb_select_none)
+        self.ui_select_invert = tk.Button(self.canvas, text='Invert', command=self._cb_select_invert)
+        self.ui_select_selection = tk.Button(self.canvas, text='Current', command=self._cb_select_selection)
+        self.ui_batch_element_entry = tk.Entry(self.canvas, textvariable=self.var_mm_element, width=5)
+        self.ui_batch_element_btn = tk.Button(self.canvas, text='Set', command=self._cb_batch_element_btn)
+        self.ui_batch_type_entry = tk.Entry(self.canvas, textvariable=self.var_mm_type, width=5)
+        self.ui_batch_type_btn = tk.Button(self.canvas, text='Set', command=self._cb_batch_type_btn)
+        toolbar = [[self.ui_select_all, self.ui_select_none, 'Element', self.ui_batch_element_entry, self.ui_batch_element_btn],
+                   [self.ui_select_invert, self.ui_select_selection, 'MM type', self.ui_batch_type_entry, self.ui_batch_type_btn]]
+        self.auto_grid(self.ui_toolbar_frame, toolbar, resize_columns=(), padx=3, pady=3, sticky='we')
+        row += 1
+        self.canvas.rowconfigure(row, weight=1)
+        self.ui_table = t = _SortableTableWithEntries(self.canvas)
+        self.ui_table.grid(row=row, padx=5, pady=5, sticky='news')
+        kw = dict(anchor='w', refresh=False)
+        t.addColumn('#', 'serial', format="%d", headerPadX=5, **kw)
+        t.addColumn('Atom', 'atom', format=str, headerPadX=50, **kw)
+        t.addColumn('charge', 'charge', format=str, headerPadX=5, **kw)
+        t.addColumn('mol2type', 'mol2type', headerPadX=5, **kw)
+        t.addColumn('Chimera Amber type', 'gafftype', headerPadX=5, **kw)
+        t.addColumn('element', 'var_element', format=lambda a: a, headerPadX=5, **kw)
+        t.addColumn('MM type', 'var_mmtype', format=lambda a: a, headerPadX=5, **kw)
+        t.addColumn('Other options', 'mmother', format=lambda a: a, headerPadX=10, **kw)
+        if self.ui_molecule.getvalue():
+            self.ui_molecule.invoke()
+        else:
+            t.setData([])
+        t.launch()
+
+    def populate_table(self, molecule):
+        atoms = molecule.atoms
+        data = []
+        mapping = self.atoms2rows[molecule] = {}
+        for atom in atoms:
+            kwargs = dict(atom=atom,
+                          charge=getattr(atom, 'charge', None),
+                          mol2type=getattr(atom, 'mol2type', None),
+                          gafftype=getattr(atom, 'gaffType', None),
+                          element=atom.element.name)
+            mapping[atom] = row = _AtomTableProxy(**kwargs)
+            data.append(row)
+        self.ui_table.setData(data)
+        self.canvas.after(100, self.ui_table.requestFullWidth)
+
+    #Remake
+    def restore_dialog(self, molecule, rows):
+        self.ui_molecule_dropdown.set(molecule)
+        for atom, mmtype in rows:
+            row = self.atoms2rows[atom]
+            row.mmtype = mmtype
+        self.ui_table.refresh()
+
+    #Remake
+    def export_dialog(self):
+        molecule = self.ui_molecule.getvalue()
+        rows = [(row.atom, (row.mmtype, row.v_element)) for row in self.ui_table.data]
+        return molecule, rows
+
+    def _add_files(self):
+        filepaths = askopenfilenames(filetypes=[('Frcmod File', '*.frcmod'), ('All files', '*')])
+        for filepath in filepaths:
+            self.ui_files_to_load.insert('end', filepath)
+        self.mmfrcmod[:] = list(self.ui_files_to_load.get())[:]
+
+    def _remove_files(self):
+        """
+        Remove the selected stage from the stage listbox
+        """
+        selection = self.ui_files_to_load._listbox.curselection()
+        self.ui_files_to_load.delete(*selection)
+        self.mmfrcmod[:] = list(self.ui_files_to_load.get())[:]
+
+    def _calc_element(self):
+        molecule = self.ui_molecule.getvalue()
+        mol2_types = [getattr(atom, 'mol2type', '') for atom in molecule.atoms]
+        gaff_types = [getattr(atom, 'gaffType', '') for atom in molecule.atoms]
+        mol2_plausible = self._plausible_type(MM_TYPES, mol2_types)
+        gaff_plausible = self._plausible_type(MM_TYPES, gaff_types)
+        for row in self.ui_table.data:
+            try:
+                row.v_element =  MM_TYPES[mol2_plausible][getattr(row.atom, 'mol2type').upper()]['element']
+            except:
+                try:
+                    row.v_element = MM_TYPES[gaff_plausible][getattr(row.atom, 'gaffType').upper()]['element']
+                except:
+                    row.v_element = ''
+        self.ui_table.refresh()
+        self.status('Atom elements updated', color='blue', blankAfter=3)
+        
+    def _calc_gaff(self):
+        import AddCharge.gui as AC
+        d = AC.AddChargesDialog(models=[self.ui_molecule.getvalue()],
+                                chargeModel='AMBER ff99SB', cb=self._cb_calc_gaff)
+
+    def _cb_calc_gaff(self, *args, **kwargs):
+        for row in self.ui_table.data:
+            row.charge = getattr(row.atom, 'charge', None)
+            row.gafftype = getattr(row.atom, 'gaffType', None)
+        self.var_mm_attrib.set('Chimera Amber')
+        self._calc_mm()
+        self.status('Charges and atom types calculated', color='blue', blankAfter=3)
+
+    def _calc_mm(self):
+        ff = self.mmforcefield.get()
+        orig = self.var_mm_orig_type.get()
+        if self.var_mm_attrib.get() == 'Chimera Amber':
+            attrib = 'gafftype' 
+        else:
+            attrib = self.var_mm_attrib.get().lower()    
+        for row in self.ui_table.data:
+            if ff == orig:
+                try:
+                    row.mmtype = getattr(row, attrib, '').upper()
+                except:
+                    row.mmtype = row.v_element
+            else:
+                try:
+                    row.mmtype = MM_TYPES[orig][getattr(row, attrib).upper()][ff][0]
+                    row.mmother = ", ".join(MM_TYPES[orig][getattr(row, attrib).upper()][ff][1:])
+                except KeyError:
+                    #Valorate if introduce the Element conversion
+                    row.mmtype = getattr(row, attrib, '').upper()
+                    row.mmother = ''
+                except:
+                    row.mmtype = row.v_element
+        self.ui_table.refresh()
+
+    def _plausible_type(self, mm_dict, types_list):
+        max_matches, plausible_type = 0, None
+        types_list = [x.upper() for x in types_list]
+        for t in mm_dict.keys():
+            matches = set(mm_dict[t].keys()).intersection(set(types_list))
+
+            if len(matches) > max_matches:
+                max_matches, plausible_type = len(matches), t
+        return plausible_type
+
+    def _cb_select_all(self, *args, **kwargs):
+        hlist = self.ui_table.tixTable.hlist
+        nrows = int(hlist.info_children()[-1])
+        for row in xrange(nrows+1):
+            hlist.selection_set(row)
+
+    def _cb_select_none(self, *args, **kwargs):
+        self.ui_table.tixTable.hlist.selection_clear()
+
+    def _cb_select_invert(self, *args, **kwargs):
+        hlist = self.ui_table.tixTable.hlist
+        selected = set(hlist.info_selection())
+        all_entries = set(hlist.info_children())
+        self._cb_select_none()
+        for row in selected ^ all_entries:
+            hlist.selection_set(row)
+
+    def _cb_select_selection(self, *args, **kwargs):
+        self._cb_select_none()
+        rows = [self.atoms2rows.get(atom.molecule, {}).get(atom)
+                for atom in chimera.selection.currentAtoms()]
+        self.ui_table.select(rows)
+
+    def _cb_batch_element_btn(self, *args, **kwargs):
+        element = self.var_mm_element.get()
+        selected = self.ui_table.selected()
+        for row in selected:
+            row.v_element = element
+        self.status('Applied element {} to {} rows'.format(element, len(selected)),
+                    color='blue', blankAfter=3)
+
+    def _cb_batch_type_btn(self, *args, **kwargs):
+        mm_type = self.var_mm_type.get()
+        selected = self.ui_table.selected()
+        for row in selected:
+            row.mmtype = mm_type
+        self.status('Applied MM type {} to {} rows'.format(mm_type, len(selected)),
+                    color='blue', blankAfter=3)
+
+    def _trc_mm_attrib(self, *args):
+        if self.var_mm_attrib.get() == 'Chimera Amber':
+            attrib = 'gafftype' 
+        else:
+            attrib = self.var_mm_attrib.get().lower()
+        try:
+            types_list = []
+            for row in self.ui_table.data:
+                if getattr(row, attrib, ''):
+                    types_list.append(getattr(row, attrib, '').upper())
+        except:
+            return
+        plausible_type = self._plausible_type(MM_TYPES, types_list)
+        if plausible_type:
+            self.var_mm_orig_type.set(plausible_type)
+
+    def OK(self, *args, **kwargs):
+        self.mmtypes.clear()
+        self.mmtypes['prev_types'] = {}
+        molecule, rows = self.export_dialog()
+        for i, (atom, (mmtype, v_element)) in enumerate(rows):
+            if not mmtype:
+                not_filledin = len([1 for row in rows[i+1:] if not row[1]])
+                raise UserError('Atom {} {} no type defined!'.format(atom,
+                                'and {} atoms more have'.format(not_filledin)
+                                if not_filledin else 'has'))
+            if not v_element:
+                not_filledin = len([1 for row in rows[i+1:] if not row[1]])
+                raise UserError('Atom {} {} no element defined!'.format(atom,
+                                'and {} atoms more have'.format(not_filledin)
+                                if not_filledin else 'has'))
+            self.mmtypes[atom] = (mmtype, v_element)
+            prev_type = getattr(atom, self.var_mm_attrib.get(), '').upper()
+            if prev_type in self.mmtypes['prev_types']:
+                self.mmtypes['prev_types'][prev_type].add(mmtype.upper())
+            else:
+                self.mmtypes['prev_types'][prev_type] = {mmtype.upper()}
+            setattr(atom, 'mmType', mmtype)
+            atom.element = Element(v_element)
+        self.Close()

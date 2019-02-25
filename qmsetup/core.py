@@ -9,7 +9,6 @@ from copy import copy
 from traceback import print_exc
 import os
 import json
-import re
 # Chimera stuff
 import chimera
 from chimera.baseDialog import NotifyDialog
@@ -36,6 +35,7 @@ class Controller(object):
         # Flags
         self._basis_set_dialog = None
         self._layers_dialog = None
+        self._mmtypes_dialog = None
         self._modredundant_dialog = None
 
         # Tie everything up
@@ -53,7 +53,7 @@ class Controller(object):
 
         # Button actions
         buttons = ('ui_layers', 'ui_solvent_btn', 'ui_qm_basis_per_atom',
-                   'ui_redundant_btn', 'ui_mm_frcmod_btn', 'ui_mm_types_btn', 'ui_checkpoint_btn')
+                   'ui_redundant_btn', 'ui_checkpoint_btn','ui_mm_set_types_btn')
         for btn in buttons:
             button = getattr(self.gui, btn)
             command = getattr(self, '_cmd' + btn[2:], None)
@@ -64,7 +64,7 @@ class Controller(object):
         with_callback = ('ui_job', 'ui_job_options', 'ui_calculation',
                          'ui_qm_methods', 'ui_qm_functional_type',
                          'ui_qm_functionals', 'ui_qm_basis_kind', 'ui_qm_basis_ext',
-                         'ui_mm_forcefields', 'ui_mm_water_forcefield', 'ui_memory_units')
+                         'ui_mm_water_forcefield', 'ui_memory_units')
         for name in with_callback:
             item = getattr(self.gui, name)
             command = getattr(self, '_cb' + name[2:], None)
@@ -76,10 +76,11 @@ class Controller(object):
                      'var_qm_functional', 'var_qm_functional_type', 'var_qm_basis_set',
                      'var_qm_basis_kind', 'var_qm_basis_ext',
                      'var_mm_forcefield', 'var_mm_water_forcefield',
-                     'var_mm_frcmod', 'var_charge_qm', 'var_charge_mm',
-                     'var_multiplicity_qm', 'var_multiplicity_mm', 'var_title',
-                     'var_checkpoint', 'var_checkpoint_path',
-                     'var_nproc', 'var_memory', 'var_memory_units')
+                     'var_mm_residues', 'var_mm_external',
+                     'var_charge_qm', 'var_charge_mm','var_multiplicity_qm', 
+                     'var_multiplicity_mm', 'var_title', 'var_checkpoint', 
+                     'var_checkpoint_path', 'var_nproc', 'var_memory', 
+                     'var_memory_units', 'var_mm_from_mol2')
         for name in variables:
             var = getattr(self.gui, name)
             command = getattr(self, '_trc' + name[3:], None)
@@ -138,7 +139,8 @@ class Controller(object):
         fn, ext = os.path.splitext(path)
         # First, dump GUI state
         with open('{}_state.json'.format(fn), 'w') as f:
-            json.dump(state, f, default=lambda a: None)
+            print(state)
+            json.dump(state, f, default=lambda a: None) #, skipkeys=True
         # Second, export files
         for i, gfile in enumerate(gfiles):
             outpath = '{fn}{i}{ext}'.format(fn=fn, i=i+1 if i else '', ext=ext)
@@ -196,17 +198,12 @@ class Controller(object):
                                                     master=self.gui.uiMaster())
         self._basis_set_dialog.enter()
 
-    def _cmd_mm_frcmod_btn(self, *args):
-        path = askopenfilename(filetypes=[('Frcmod', '*.frcmod'), ('All files', '*')])
-        if path:
-            self.gui.var_mm_frcmod.set(path)
-
-    def _cmd_mm_types_btn(self, *args):
-        if self.gui.var_mm_forcefield.get() == 'GAFF':
-            import AddCharge.gui as AC
-            d = AC.AddChargesDialog(models=[self.gui.ui_molecules.getvalue()],
-                                    chargeModel='AMBER ff99SB')
-
+    def _cmd_mm_set_types_btn(self, *args):
+        if self._mmtypes_dialog is None:
+            from gui import MMTypesDialog
+            self._mmtypes_dialog = MMTypesDialog(self.gui._mmtypes, self.gui.var_mm_forcefield,
+                                                self.gui._mm_frcmod, master=self.gui.uiMaster())
+        self._mmtypes_dialog.enter()
 
     def _cmd_checkpoint_btn(self, *args):
         path = asksaveasfilename()
@@ -240,17 +237,15 @@ class Controller(object):
     def _trc_calculation(self, *args):
         value = self.gui.var_calculation.get()
         if value == 'ONIOM':
-            self.gui.ui_mm_forcefields['menubutton_state'] = 'normal'
+            self.gui.ui_layers['state'] = 'normal'
+            self.gui.ui_mm_set_types_btn['state'] = 'normal'
             self.gui.ui_mm_water_forcefield['menubutton_state'] = 'normal'
-            self.gui.ui_mm_frcmod['state'] = 'normal'
-            self.gui.ui_mm_frcmod_btn['state'] = 'normal'
             self.gui.ui_charges_mm['state'] = 'normal'
             self.gui.ui_multiplicity_mm['state'] = 'normal'
         else:  # == QM
-            self.gui.ui_mm_forcefields['menubutton_state'] = 'disabled'
+            self.gui.ui_layers['state'] = 'disabled'
+            self.gui.ui_mm_set_types_btn['state'] = 'disabled'
             self.gui.ui_mm_water_forcefield['menubutton_state'] = 'disabled'
-            self.gui.ui_mm_frcmod['state'] = 'disabled'
-            self.gui.ui_mm_frcmod_btn['state'] = 'disabled'
             self.gui.ui_charges_mm['state'] = 'disabled'
             self.gui.ui_multiplicity_mm['state'] = 'disabled'
 
@@ -298,18 +293,11 @@ class Controller(object):
         if basis:
             self.gui.var_qm_basis_set.set('{}{}'.format(basis, ext if ext else ''))
     _trc_qm_basis_ext = _trc_qm_basis_kind
-
-    def _trc_mm_forcefield(self, *args):
-        if self.gui.var_mm_forcefield.get() == 'GAFF':
-            self.gui.ui_mm_types_btn['state'] = 'normal'
-        else:
-            self.gui.ui_mm_types_btn['state'] = 'disabled'
-
+                        
     def _trg_molecule_changed(self, *args, **kwargs):
         self.model._bondorder_cache.clear()
         self.model._atoms_map.clear()
         self.gui._layers.clear()
-
 
 class Model(object):
 
@@ -331,6 +319,7 @@ class Model(object):
             memory=(state['memory'] or None, state['memory_units']),
             checkpoint=state['checkpoint_path'] if state['checkpoint'] else None,
             connectivity=state['connectivity'],
+            mm_external=state['mm_external'],
         )
         infile = GaussianInputFile(**kwargs)
         infile.job = state['job']
@@ -348,7 +337,7 @@ class Model(object):
             infile.mm_forcefield = state['mm_forcefield']
             infile.mm_water_forcefield = state['mm_water_forcefield']
             if state['mm_frcmod']:
-                infile.add_mm_forcefield(state['mm_frcmod'])
+                infile.add_mm_forcefield(state['mm_frcmod'], state['mm_types'])
             if state['charge_mm']:
                 infile.mm_charge = int(state['charge_mm'])
             if state['multiplicity_mm']:
@@ -363,6 +352,7 @@ class Model(object):
                 infile.add_route_option(token)
 
         replicas = [infile]
+        
         if with_atoms:
             infile.atoms = self.process_atoms(state)
             if with_replicas and state['replicas']:
@@ -374,7 +364,7 @@ class Model(object):
                     for atom, coord in zip(replica.atoms, coordset.xyzArray()):
                         atom.coordinates = tuple(coord)
                     replicas.append(replica)
-
+        
         return replicas
 
     @property
@@ -389,8 +379,56 @@ class Model(object):
         state['molecule'] = self.gui.ui_molecules.getvalue()
         state['layers_flex'] = self.gui._layers.copy()
         state['replicas'] = self.gui.var_molecule_replicas.get()
+        state['mm_types'] = self.gui._mmtypes.copy()
+        state['mm_frcmod'] = self.gui._mm_frcmod[:]
 
         return state
+
+    def patch_residue_names(self, state=None):
+        if state is None:
+            state = self.state
+        for residue in state['molecule'].residues:
+            #Waters are 'WAT'
+            if residue.type  == 'HOH':
+                residue.type = 'WAT'
+            #Histidines cannot be 'HIS', have to be 'HIP'/'HIN'/'HID'/'HIE'
+            elif residue.type == 'HIS':
+                hd1, he2 = False, False
+                for atom in residue.atoms:
+                    if atom.name.upper() == "HD1":
+                        hd1 = True
+                    elif atom.name.upper() == "HE2":
+                        he2 = True
+                if hd1 and he2:
+                    residue.type = 'HIP'
+                elif hd1:
+                    residue.type = 'HID'
+                elif he2:
+                    residue.type = 'HIE'
+                else:
+                    residue.type = 'HIN'
+            #GLU/ASP with COOH have to be GLH/ASH
+            elif residue.type == 'GLU' or residue.type == 'ASP':
+                for atom in residue.atoms:
+                    if atom.name.upper() == "HD1" or atom.name.upper() == 'HD2':
+                        residue.type = residue.type[:2] + 'H'
+                        break
+            #Deprotonated TYR has to be TYD
+            elif residue.type == 'TYR':
+                tyd = True
+                for atom in residue.atoms:
+                    if atom.name.upper() == "HH" or atom.name.upper() == 'HO':
+                        tyd = False
+                        break
+                if tyd:
+                    residue.type = 'TYD'
+
+            #Valorate if use len(atom.primaryNeighbors()) to discern protonated/deprotonated
+            #Consult http://archive.ambermd.org/201406/0113.html
+
+            #Terminal residues
+            if len(residue.bondedResidues()) == 1:
+                pass
 
     def gaussian_atom(self, atom, n, oniom=True, layer=None, link=None, frozen=False):
         """
@@ -413,8 +451,8 @@ class Model(object):
             if layer is None:
                 raise ValueError('layer must be set if oniom is True')
             gatom.pdb_name = atom.name
-            gatom.atom_type = getattr(atom, 'gaffType',
-                                      chimera2sybyl.get(atom.idatmType, atom.idatmType))
+            gatom.atom_type = getattr(atom, 'mmType',
+                                          chimera2sybyl.get(atom.idatmType, atom.idatmType))
             geometry = chimera.idatm.typeInfo.get(atom.idatmType)
             if geometry is not None:
                 gatom.geometry = geometry.geometry
@@ -438,23 +476,38 @@ class Model(object):
         if state['calculation'] == 'ONIOM':  # we have layers to deal with!
             oniom = True
             layers_flex = state['layers_flex']
-            frozen
+            mm_types = state['mm_types']
             if not layers_flex:
                 raise chimera.UserError('ONIOM layers have not been defined!')
+            if not mm_types:
+            	raise chimera.UserError('MM types have not been defined')
+
+        if state['mm_residues']:
+            self.patch_residue_names(state)
+
         for n, catom in enumerate(chimera_atoms):
             layer, frozen = layers_flex.get(catom, (None, 0))
+
             kw = dict(oniom=oniom, layer=layer, frozen=int(frozen))
             gatom = self.gaussian_atom(catom, n=n+1, **kw)
             gaussian_atoms.append(gatom)
             mapping[catom] = gatom
 
         show_warning = False
+        """
+        try:
+            assign_bond_orders(state['molecule'], engine='openbabel')
+        except:
+            try:
+                assign_bond_orders(state['molecule'], engine='rdkit')
+            except:
+                pass
+        """
         for catom, gatom in zip(chimera_atoms, gaussian_atoms):
             for cneighbor, bond in catom.bondsMap.items():
                 order = getattr(bond, 'order', None)
-                # if order is None:
-                #     order = 1.0
-                #     show_warning = False
+                if not order:
+                    order = 1.0
                 gatom.add_neighbor(mapping[cneighbor], order)
         if show_warning:
             errormsg = ('Some bonds did not specify bond order, so a default of 1.0 '
@@ -465,26 +518,3 @@ class Model(object):
             d.enter()
 
         return gaussian_atoms
-
-
-import chimera
-if not hasattr(chimera, '_openMol2Model_original'):
-    chimera._openMol2Model_original = chimera._openMol2Model
-
-
-def patch_mol2_reader(*args, **kwargs):
-    """
-    Force UCSF Chimera to read UFF atom types in Mol2
-    """
-    def parse_uff(atom_line):
-        atom_type = getattr(atom_line, 'mol2type', None) or atom_line.split().fields[5]
-        matches = re.search(r'([A-Za-z]{1,3})[^A-Za-z\s]{0,6}', atom_type)
-        element = matches.group(0).title() if matches else atom_type
-        return element
-    molecules = chimera._openMol2Model_original(*args, **kwargs)
-    for molecule in molecules:
-        for atom in molecule.atoms:
-            atom.element = chimera.Element(parse_uff(atom))
-
-
-chimera._openMol2Model = patch_mol2_reader

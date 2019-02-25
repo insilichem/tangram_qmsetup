@@ -10,15 +10,18 @@ from __future__ import print_function, division
 from string import ascii_letters
 import sys
 import os
+import itertools
 from collections import namedtuple, defaultdict
 from datetime import datetime
+
+from mm_dicts import MM_TYPES
 
 if sys.version_info.major == 3:
     basestring = str
 
 # QM_BASIS_SETS_EXT = ['d,f-Diffuse (+)', 'p,d,f-Diffuse (++)', 'd,f-Polarization (*)', 'p,d,f-Polarization (**)']
 MM_FORCEFIELDS = {
-    'General': ['Amber', 'GAFF', 'Dreiding', 'UFF'],
+    'General': ['Amber', 'Amber99SB', 'GAFF', 'Dreiding', 'UFF', 'MM3', 'MM3PRO'],
     'Water': ['TIP3P']
 }
 MEM_UNITS = ('KB', 'MB', 'GB', 'TB', 'KW', 'MW', 'GW', 'TW')
@@ -60,6 +63,11 @@ QM_FUNCTIONALS = {
 }
 QM_FUNCTIONALS_ALL = set(f for v in QM_FUNCTIONALS.values() for f in v)
 
+MM_ATTRIBS = ('mol2type', 'Chimera Amber')
+
+GAUSSIAN_VERSION = ('gaussian_16', 'gaussian_09a', 'gaussian_09b', 'gaussian_09c', 'gaussian_09d')
+
+MM_PROGRAM = ['tinker']
 
 class GaussianInputFile(object):
 
@@ -101,7 +109,8 @@ class GaussianInputFile(object):
         self._qm_basis_sets_extra = []
         self._mm_forcefield = None
         self._mm_water_forcefield = None
-        self._mm_forcefield_extra = None
+        self.mm_external = None
+        self._mm_forcefield_extra = []
         self._atoms = []
         self._restraints = []
 
@@ -143,6 +152,11 @@ class GaussianInputFile(object):
             sections.append('')
         if self.connectivity:
             sections.append(self.compute_connectivity())
+            sections.append('')
+        mm_forcefield_extra = self.mm_forcefield_extra
+        if mm_forcefield_extra:
+            sections.append('')
+            sections.append(mm_forcefield_extra)
             sections.append('')
         qm_basis_set_extra = self.qm_basis_set_extra
         if qm_basis_set_extra:
@@ -361,11 +375,19 @@ class GaussianInputFile(object):
             raise ValueError('Forcefield {} not recognized'.format(value))
         self._mm_water_forcefield = value
 
-    def add_mm_forcefield(self, value):
-        if value.endswith('.frcmod') and os.path.isfile(value):
-            self._mm_forcefield_extra = import_from_frcmod(value)
+    @property
+    def mm_forcefield_extra(self):
+        if self._mm_forcefield_extra:
+            return '\n'.join(map(str, self._mm_forcefield_extra))
         else:
-            raise ValueError('Supply a .frcmod file to load new parameters')
+            return ''
+
+    def add_mm_forcefield(self, value, mmtypes):
+        for file in value:
+            if file.endswith('.frcmod') and os.path.isfile(file):
+                self._mm_forcefield_extra.extend(import_from_frcmod(file, mmtypes))
+            else:
+                raise ValueError('Supply a .frcmod file to load new parameters')
 
     # System
     @property
@@ -382,7 +404,7 @@ class GaussianInputFile(object):
         if len(self._atoms) > 250000:
             raise ValueError('Max number of atoms is 250 000.')
         if self.mm_forcefield:  # using ONIOM!
-            self._compute_oniom_links(self._atoms)
+            self._compute_oniom_links(self._atoms, self.mm_forcefield)
         return self._atoms
 
     @atoms.setter
@@ -471,11 +493,10 @@ class GaussianInputFile(object):
                     seen.add(neighbor)
             if line:
                 lines.append('{} {}'.format(atom.n, ' '.join(line)))
-
         return '\n'.join(lines)
 
     @staticmethod
-    def _compute_oniom_links(atoms):
+    def _compute_oniom_links(atoms, mm_forcefield):
         by_layers = defaultdict(list)
         linked = set()
         for atom in atoms:
@@ -485,9 +506,15 @@ class GaussianInputFile(object):
                 if neighbor.oniom_layer != atom_layer:
                     can_be_link.append(neighbor)
             n_links = len(can_be_link)
-            if n_links == 1:
-                atom.oniom_link = can_be_link[0]
-                can_be_link[0].oniom_link = atom
+            if n_links == 1 and can_be_link[0].oniom_bonded != atom:
+                try:
+                    if (atom_layer == 'H') or (atom_layer == 'M' and can_be_link[0].oniom_layer == 'L'):
+                        atom.oniom_link = 'H-' + MM_TYPES[mm_forcefield][atom.atom_type]['link_atom']
+                    else:
+                        atom.oniom_link = 'H-' + MM_TYPES[mm_forcefield][can_be_link[0].atom_type]['link_atom']
+                except:
+                    atom.oniom_link = 'H-H'
+                atom.oniom_bonded = can_be_link[0]
             elif n_links > 1:
                 raise ValueError('Atom {} can only have one layer link. Found: {}'.format(
                     atom.atom_spec, ', '.join([a.atom_spec for a in can_be_link])))
@@ -592,9 +619,8 @@ class GaussianAtom(object):
         if value is None:
             self._atom_type = None
             return
-        if not value or value[0] not in ascii_letters:
-            raise ValueError('Atom_type cannot be empty and must start with a letter. '
-                             'Value provided: {}'.format(value))
+        if not value:
+            raise ValueError('Atom_type cannot be empty.')
         self._atom_type = value
 
     @property
@@ -798,11 +824,7 @@ class GaussianAtom(object):
 
     @oniom_link.setter
     def oniom_link(self, value):
-        if isinstance(value, GaussianAtom) or value is None:
-            self._oniom_link = value
-            return
-        raise ValueError('oniom_link must be a GaussianAtom instance. '
-                            'Value provided: {}'.format(value))
+        self._oniom_link = value
 
     @property
     def oniom_bonded(self):
@@ -810,14 +832,11 @@ class GaussianAtom(object):
 
     @oniom_bonded.setter
     def oniom_bonded(self, value):
-        if value is None:
-            self._oniom_bonded = None
+        if isinstance(value, GaussianAtom) or value is None:
+            self._oniom_bonded = value
             return
-        try:
-            self._oniom_bonded = int(value)
-        except ValueError:
-            raise ValueError('oniom_bonded must be int or int-like. '
-                             'Value provided: {}'.format(value))
+        raise ValueError('oniom_bonded must be a GaussianAtom instance. '
+                            'Value provided: {}'.format(value))
 
     @property
     def oniom_scale_factors(self):
@@ -941,13 +960,12 @@ class GaussianAtom(object):
         # ONIOM config
         if self.oniom_layer:
             line.append(' {}'.format(self.oniom_layer))
-        link = self.oniom_link
-        if link:
-            line.append(' {}'.format(link.n))
-            if link.oniom_bonded:
-                line.append(' {}'.format(link.oniom_bonded))
-            if link.oniom_scale_factors:
-                line.append(' {}'.format(' '.join(link.oniom_scale_factors)))
+        if self.oniom_link:
+            line.append(' {}'.format(self.oniom_link))
+            if self.oniom_bonded:
+                line.append(' {}'.format(self.oniom_bonded.n))
+            if self.oniom_scale_factors:
+                line.append(' {}'.format(' '.join(self.oniom_scale_factors)))
 
         return ''.join(map(str, line))
 
@@ -1145,10 +1163,111 @@ class ModRedundantRestraint(object):
         except IndexError:
             return ''
 
+class MmExtraDefinition(object):
 
-def import_from_frcmod(path):
-    return path
+    TYPES = ('VDW', 'HRMSTR1', 'HRMBND1', 'DREITRS')
 
+    def __init__(self, dtype, mmtype, mmtype2=None, mmtype3=None, mmtype4=None,
+                bond_length=None, well_depth=None, force_constant=None, 
+                angle=None, idivf=None, pk=None, phase=None, pn=None):
+        if dtype.upper() not in self.TYPES:
+            raise ValueError('not valid definition type')
+
+        self.dtype = dtype
+        self.mmtype = mmtype
+        self.mmtype2 = mmtype2
+        self.mmtype3 = mmtype3
+        self.mmtype4 = mmtype4
+        self.bond_length = bond_length
+        self.well_depth = well_depth
+        self.force_constant = force_constant
+        self.angle = angle
+        self.idivf = idivf
+        self.pk = pk
+        self.phase = phase
+        self.pn = pn
+
+    def __str__(self):
+        kwargs = dict(dtype=self.dtype,
+                      mmtype=self.mmtype,
+                      args=' '.join(map(str, self._args)))
+        return '{dtype} {mmtype} {args}'.format(**kwargs)
+
+    @property
+    def _args(self):
+        if self.dtype == 'VDW':
+            return self.bond_length, self.well_depth
+        elif self.dtype == 'HrmStr1':
+            return self.mmtype2, self.force_constant, self.bond_length
+        elif self.dtype == 'HrmBnd1':
+            return self.mmtype2, self.mmtype3, self.force_constant, self.angle
+        elif self.dtype == 'DreiTrs':
+            return self.mmtype2, self.mmtype3, self.mmtype4, float(self.pk)*2, self.phase, self.pn, float(self.idivf)/2
+        else:
+            return ()
+
+def import_from_frcmod(path, mmtypes):
+    SECTIONS = ('NONB', 'BOND', 'ANGL', 'DIHE')
+    section = None
+    mm_definitions = []
+    with open(path) as inf:
+        for line in inf:
+            if line.strip('\n').upper() in SECTIONS:
+                section = line.strip('\n').upper()
+            elif not line.strip():
+                section = None
+            elif section:
+                mm_definitions.extend(_create_mm_definitions(line, section, mmtypes))
+    return mm_definitions
+
+def _create_mm_definitions(line, section, mmtypes):
+    definitions = []
+    if section == 'NONB':
+        args = line.split()
+        try:
+            args[0] = mmtypes['prev_types'][args[0].upper()]
+        except:
+            pass
+        #It is supposed that NONB section follows the 10B card type (ambermd.org/formats.html)
+        for mm in args[0]:
+            definitions.append(MmExtraDefinition('VDW', mm, bond_length=args[1], well_depth=args[2]))
+    elif section == 'BOND':
+        mms = line[:5].split('-')
+        for i, mm in enumerate(mms):
+            try:
+                mms[i] = mmtypes['prev_types'][mm.upper()]
+            except:
+                mms[i] = {mms[i]}
+        args = line[5:].split()
+        #It is supposed that BOND section follows the 4 card type (ambermd.org/formats.html)
+        for par in itertools.product(mms[0], mms[1]):
+            definitions.append(MmExtraDefinition('HrmStr1', par[0], mmtype2=par[1], force_constant=args[0], bond_length=args[1]))
+    elif section == 'ANGL':
+        mms = line[:8].split('-')
+        for i, mm in enumerate(mms):
+            try:
+                mms[i] = mmtypes['prev_types'][mm.upper()]
+            except:
+                mms[i] = {mms[i]}
+        args = line[8:].split()
+        #It is supposed that ANGL section follows the 5 card type (ambermd.org/formats.html)
+        for par in itertools.product(mms[0], mms[1], mms[2]):
+            definitions.append(MmExtraDefinition('HrmBnd1', par[0], mmtype2=par[1], mmtype3=par[2], force_constant=args[0], angle=args[1]))
+    elif section == 'DIHE':
+        mms = line[:11].split('-')
+        if mms[0] == 'X ':
+            mms[0] = '* '
+        if mms[3] == 'X ':
+            mms[3] = '* '
+        for i, mm in enumerate(mms):
+            try:
+                mms[i] = mmtypes['prev_types'][mm.upper()]
+            except:
+                mms[i] = {mms[i]}
+        args = line[11:].split()
+        for par in itertools.product(mms[0], mms[1], mms[2], mms[3]):
+            definitions.append(MmExtraDefinition('DreiTrs', par[0], mmtype2=par[1], mmtype3=par[2], mmtype4=par[3], idivf=args[0], pk=args[1], phase=args[2], pn=args[3]))
+    return definitions
 
 if __name__ == '__main__':
     atom = GaussianAtom(element='C', coordinates=(10, 10, 10), n=1, atom_type='CT',
