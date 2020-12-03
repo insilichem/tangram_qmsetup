@@ -6,10 +6,10 @@ from __future__ import print_function, division
 import chimera.extension
 
 
-class CauchianExtension(chimera.extension.EMO):
+class QMSetupExtension(chimera.extension.EMO):
 
     def name(self):
-        return 'Tangram Cauchian'
+        return 'Tangram QMSetup'
 
     def description(self):
         return "Prepare input files for Gaussian jobs"
@@ -24,4 +24,4 @@ class CauchianExtension(chimera.extension.EMO):
         self.module('gui').showUI()
 
 
-chimera.extension.manager.registerExtension(CauchianExtension(__file__))
+chimera.extension.manager.registerExtension(QMSetupExtension(__file__))
