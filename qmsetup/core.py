@@ -139,7 +139,6 @@ class Controller(object):
         fn, ext = os.path.splitext(path)
         # First, dump GUI state
         with open('{}_state.json'.format(fn), 'w') as f:
-            print(state)
             json.dump(state, f, default=lambda a: None) #, skipkeys=True
         # Second, export files
         for i, gfile in enumerate(gfiles):
